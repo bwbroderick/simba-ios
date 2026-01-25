@@ -255,44 +255,46 @@ struct HTMLCardView: View {
     @StateObject private var renderer = HTMLSnapshotRenderer()
 
     var body: some View {
-        Group {
-            if let image = renderer.snapshot {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .clipped()
-            } else {
-                Rectangle()
-                    .fill(Color(white: 0.97))
-                    .overlay(
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    )
+        GeometryReader { geo in
+            Group {
+                if let image = renderer.snapshot {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                } else {
+                    Rectangle()
+                        .fill(Color(white: 0.97))
+                        .overlay(
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        )
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+            .onAppear {
+                renderer.render(html: html, size: geo.size)
             }
         }
         .background(Color(white: 0.97))
         .cornerRadius(16)
-        .onAppear {
-            let width = UIScreen.main.bounds.width * 0.8 - 32
-            renderer.render(html: html, width: width)
-        }
     }
 }
 
 class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var snapshot: UIImage?
 
-    private static var cache: [String: UIImage] = [:]
     private static var pending: Set<String> = []
 
     private var webView: WKWebView?
     private var currentKey: String?
     private var targetSize: CGSize = .zero
 
-    func render(html: String, width: CGFloat) {
-        let key = "\(html.hashValue)_\(Int(width))"
+    func render(html: String, size: CGSize) {
+        let key = "\(html.hashValue)_\(Int(size.width))x\(Int(size.height))"
 
-        if let cached = Self.cache[key] {
+        if let cached = HTMLSnapshotCache.shared.image(for: key) {
             snapshot = cached
             return
         }
@@ -300,7 +302,7 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
         guard !Self.pending.contains(key) else { return }
         Self.pending.insert(key)
         currentKey = key
-        targetSize = CGSize(width: width, height: 300)
+        targetSize = size
 
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = true
@@ -318,10 +320,10 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
         <html>
           <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=\(Int(width)), initial-scale=1.0, maximum-scale=1.0">
+            <meta name="viewport" content="width=\(Int(targetSize.width)), initial-scale=1.0, maximum-scale=1.0">
             <style>
               * { box-sizing: border-box; }
-              html, body { margin: 0; padding: 0; width: \(Int(width))px; overflow: hidden; }
+              html, body { margin: 0; padding: 0; width: \(Int(targetSize.width))px; height: \(Int(targetSize.height))px; overflow: hidden; }
               body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; }
               img { max-width: 100%; height: auto; display: block; }
               a { color: #111; }
@@ -355,7 +357,7 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
         wv.takeSnapshot(with: config) { [weak self] image, error in
             guard let self = self else { return }
             if let image = image {
-                Self.cache[key] = image
+                HTMLSnapshotCache.shared.store(image: image, for: key)
                 DispatchQueue.main.async {
                     self.snapshot = image
                 }
@@ -376,6 +378,7 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
 
 struct BottomNavView: View {
     let isUnreadOnly: Bool
+    let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
 
     var body: some View {
@@ -392,10 +395,12 @@ struct BottomNavView: View {
                     .frame(width: 44, height: 44)
             }
             Spacer()
-            Image(systemName: "star")
-                .font(.title3.weight(.semibold))
-                .foregroundColor(.gray.opacity(0.5))
-                .frame(width: 44, height: 44)
+            Button(action: onSearchTap) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.gray.opacity(0.5))
+                    .frame(width: 44, height: 44)
+            }
         }
         .padding(.horizontal, 48)
         .padding(.top, 12)
@@ -407,6 +412,77 @@ struct BottomNavView: View {
                 .frame(height: 1),
             alignment: .top
         )
+    }
+}
+
+struct InlineReplyBar: View {
+    let senderName: String
+    let subject: String
+    let recipientEmail: String
+    let isSending: Bool
+    let onSend: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var replyText = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color(white: 0.92))
+                .frame(height: 1)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Replying to \(senderName)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.gray)
+
+                    Spacer()
+
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(.gray)
+                            .frame(width: 24, height: 24)
+                    }
+                }
+
+                Text(subject)
+                    .font(.caption)
+                    .foregroundColor(.gray.opacity(0.8))
+                    .lineLimit(1)
+
+                HStack(spacing: 10) {
+                    TextField("Add your reply...", text: $replyText, axis: .vertical)
+                        .font(.subheadline)
+                        .lineLimit(1...4)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color(white: 0.95))
+                        .cornerRadius(20)
+                        .focused($isFocused)
+
+                    Button(action: {
+                        if !replyText.isEmpty {
+                            onSend(replyText)
+                        }
+                    }) {
+                        Image(systemName: isSending ? "arrow.up.circle" : "arrow.up.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(replyText.isEmpty ? .gray.opacity(0.4) : .black)
+                    }
+                    .disabled(replyText.isEmpty || isSending)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .padding(.bottom, 20)
+            .background(Color.white)
+        }
+        .onAppear {
+            isFocused = true
+        }
     }
 }
 

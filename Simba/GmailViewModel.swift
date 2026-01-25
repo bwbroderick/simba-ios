@@ -5,8 +5,10 @@ import UIKit
 @MainActor
 final class GmailViewModel: ObservableObject {
     @Published var threads: [EmailThread] = []
+    @Published var searchResults: [EmailThread] = []
     @Published var isSignedIn = false
     @Published var isLoading = false
+    @Published var isSearching = false
     @Published var errorMessage: String?
     @Published var isSending = false
 
@@ -96,7 +98,7 @@ final class GmailViewModel: ObservableObject {
             let (listData, _) = try await URLSession.shared.data(for: listRequest)
             let listResponse = try JSONDecoder().decode(GmailMessageListResponse.self, from: listData)
 
-            let messageIDs = listResponse.messages.map { $0.id }
+            let messageIDs = (listResponse.messages ?? []).map { $0.id }
             var loadedThreads: [EmailThread] = []
 
             for messageID in messageIDs {
@@ -114,6 +116,8 @@ final class GmailViewModel: ObservableObject {
 
             threads = loadedThreads
             saveCachedThreads(loadedThreads)
+
+            HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -246,6 +250,62 @@ final class GmailViewModel: ObservableObject {
         }
 
         isSending = false
+    }
+
+    func search(query: String) async {
+        guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
+            errorMessage = "Missing access token."
+            return
+        }
+
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            searchResults = []
+            return
+        }
+
+        isSearching = true
+        errorMessage = nil
+
+        do {
+            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages")!
+            listComponents.queryItems = [
+                URLQueryItem(name: "maxResults", value: "20"),
+                URLQueryItem(name: "q", value: query)
+            ]
+
+            let listURL = listComponents.url!
+            var listRequest = URLRequest(url: listURL)
+            listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (listData, _) = try await URLSession.shared.data(for: listRequest)
+            let listResponse = try JSONDecoder().decode(GmailMessageListResponse.self, from: listData)
+
+            let messageIDs = (listResponse.messages ?? []).map { $0.id }
+            var loadedThreads: [EmailThread] = []
+
+            for messageID in messageIDs {
+                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/\(messageID)?format=full")!
+                var detailRequest = URLRequest(url: detailURL)
+                detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+                let (detailData, _) = try await URLSession.shared.data(for: detailRequest)
+                let detail = try JSONDecoder().decode(GmailMessageDetail.self, from: detailData)
+
+                if let thread = Self.makeThread(from: detail) {
+                    loadedThreads.append(thread)
+                }
+            }
+
+            searchResults = loadedThreads
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isSearching = false
+    }
+
+    func clearSearchResults() {
+        searchResults = []
     }
 
     private static func makeThread(from detail: GmailMessageDetail) -> EmailThread? {
@@ -417,7 +477,7 @@ final class GmailViewModel: ObservableObject {
 }
 
 struct GmailMessageListResponse: Decodable {
-    let messages: [GmailMessageRef]
+    let messages: [GmailMessageRef]?
 }
 
 struct GmailMessageRef: Decodable {

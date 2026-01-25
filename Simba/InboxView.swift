@@ -1,14 +1,18 @@
 import SwiftUI
+import UIKit
 
 struct InboxView: View {
     @State private var path: [UUID] = []
     @StateObject private var gmailViewModel = GmailViewModel()
     @State private var showCompose = false
     @State private var showUnreadOnly = false
+    @State private var replyingToThread: EmailThread?
+    @State private var keyboardHeight: CGFloat = 0
+    @State private var showSearch = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         HeaderView(title: "Inbox", showsBack: false, onBack: nil)
@@ -44,7 +48,7 @@ struct InboxView: View {
                                     path.append(thread.id)
                                 },
                                 onReply: {
-                                    path.append(thread.id)
+                                    replyingToThread = thread
                                 },
                                 onDelete: {
                                     if let threadID = thread.threadID {
@@ -80,17 +84,58 @@ struct InboxView: View {
                     }
                 }
 
-                BottomNavView(isUnreadOnly: showUnreadOnly) {
-                    showUnreadOnly.toggle()
-                    Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
+                VStack(spacing: 0) {
+                    if let thread = replyingToThread {
+                        InlineReplyBar(
+                            senderName: thread.sender.name,
+                            subject: thread.subject,
+                            recipientEmail: thread.sender.email ?? "",
+                            isSending: gmailViewModel.isSending,
+                            onSend: { replyText in
+                                let to = thread.sender.email ?? ""
+                                let subject = thread.subject.hasPrefix("Re:") ? thread.subject : "Re: \(thread.subject)"
+                                Task {
+                                    await gmailViewModel.sendEmail(to: to, subject: subject, body: replyText)
+                                    replyingToThread = nil
+                                }
+                            },
+                            onCancel: {
+                                replyingToThread = nil
+                            }
+                        )
+                        .padding(.bottom, keyboardHeight > 0 ? keyboardHeight - 34 : 0)
+                    } else {
+                        BottomNavView(isUnreadOnly: showUnreadOnly, onSearchTap: {
+                            showSearch = true
+                        }) {
+                            showUnreadOnly.toggle()
+                            Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
+                        }
+                    }
                 }
-                FloatingComposeButton {
-                    showCompose = true
+
+                if replyingToThread == nil {
+                    FloatingComposeButton {
+                        showCompose = true
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 98)
                 }
-                .padding(.trailing, 20)
-                .padding(.bottom, 98)
             }
             .ignoresSafeArea(edges: .bottom)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+                if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        keyboardHeight = frame.height
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    keyboardHeight = 0
+                }
+            }
             .task {
                 gmailViewModel.restoreSession()
             }
@@ -101,6 +146,10 @@ struct InboxView: View {
                         Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body) }
                     }
                 )
+            }
+            .sheet(isPresented: $showSearch) {
+                SearchView()
+                    .environmentObject(gmailViewModel)
             }
         }
     }
