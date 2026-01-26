@@ -15,6 +15,7 @@ final class GmailViewModel: ObservableObject {
     private let clientID = "350262483118-bcrf17c6jrkfrum041she8njri3ju6m1.apps.googleusercontent.com"
     private let readOnlyScope = "https://www.googleapis.com/auth/gmail.readonly"
     private let sendScope = "https://www.googleapis.com/auth/gmail.send"
+    private let modifyScope = "https://www.googleapis.com/auth/gmail.modify"
     private let cacheURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("gmail-cache.json")
 
@@ -51,7 +52,7 @@ final class GmailViewModel: ObservableObject {
         GIDSignIn.sharedInstance.signIn(
             withPresenting: rootViewController,
             hint: nil,
-            additionalScopes: [readOnlyScope, sendScope]
+            additionalScopes: [readOnlyScope, sendScope, modifyScope]
         ) { [weak self] result, error in
             guard let self else { return }
             if let error {
@@ -117,6 +118,7 @@ final class GmailViewModel: ObservableObject {
             threads = loadedThreads
             saveCachedThreads(loadedThreads)
 
+            ContactStore.shared.extract(from: loadedThreads)
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch {
             errorMessage = error.localizedDescription
@@ -157,7 +159,11 @@ final class GmailViewModel: ObservableObject {
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["removeLabelIds": ["UNREAD"]], options: [])
 
-            _ = try await URLSession.shared.data(for: request)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                errorMessage = "Failed to delete: HTTP \(httpResponse.statusCode)"
+                return
+            }
         } catch {
             return
         }

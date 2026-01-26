@@ -1,4 +1,43 @@
 import Foundation
+import SwiftUI
+
+@MainActor
+class ContactStore: ObservableObject {
+    static let shared = ContactStore()
+
+    struct Contact: Identifiable {
+        let id = UUID()
+        let name: String
+        let email: String
+        let initials: String
+    }
+
+    @Published var contacts: [Contact] = []
+
+    func extract(from threads: [EmailThread]) {
+        var seen: Set<String> = []
+        var result: [Contact] = []
+        for thread in threads {
+            guard let email = thread.sender.email?.lowercased(),
+                  !seen.contains(email) else { continue }
+            seen.insert(email)
+            result.append(Contact(
+                name: thread.sender.name,
+                email: email,
+                initials: thread.sender.initials
+            ))
+        }
+        contacts = result
+    }
+
+    func suggestions(for query: String) -> [Contact] {
+        guard !query.isEmpty else { return [] }
+        let q = query.lowercased()
+        return contacts.filter {
+            $0.name.lowercased().contains(q) || $0.email.contains(q)
+        }.prefix(5).map { $0 }
+    }
+}
 
 struct Sender: Identifiable {
     let id = UUID()

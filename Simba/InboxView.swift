@@ -7,15 +7,23 @@ struct InboxView: View {
     @State private var showCompose = false
     @State private var showUnreadOnly = false
     @State private var replyingToThread: EmailThread?
+    @State private var forwardingThread: EmailThread?
+    @State private var showFeedback = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var showSearch = false
+    @State private var showSideDrawer = false
 
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        HeaderView(title: "Inbox", showsBack: false, onBack: nil)
+                        HeaderView(
+                            title: "Inbox",
+                            showsBack: false,
+                            onBack: nil,
+                            onMeTap: { showSideDrawer = true }
+                        )
 
                         if !gmailViewModel.isSignedIn {
                             GmailConnectCard(onConnect: gmailViewModel.signIn)
@@ -49,6 +57,9 @@ struct InboxView: View {
                                 },
                                 onReply: {
                                     replyingToThread = thread
+                                },
+                                onForward: {
+                                    forwardingThread = thread
                                 },
                                 onDelete: {
                                     if let threadID = thread.threadID {
@@ -105,12 +116,19 @@ struct InboxView: View {
                         )
                         .padding(.bottom, keyboardHeight > 0 ? keyboardHeight - 34 : 0)
                     } else {
-                        BottomNavView(isUnreadOnly: showUnreadOnly, onSearchTap: {
-                            showSearch = true
-                        }) {
-                            showUnreadOnly.toggle()
-                            Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
-                        }
+                        BottomNavView(
+                            isUnreadOnly: showUnreadOnly,
+                            onSearchTap: {
+                                showSearch = true
+                            },
+                            onUnreadToggle: {
+                                showUnreadOnly.toggle()
+                                Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
+                            },
+                            onFeedbackTap: {
+                                showFeedback = true
+                            }
+                        )
                     }
                 }
 
@@ -123,6 +141,28 @@ struct InboxView: View {
                     .padding(.bottom, 98)
                 }
             }
+            .overlay {
+                if showSideDrawer {
+                    Color.black.opacity(0.35)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            showSideDrawer = false
+                        }
+                }
+            }
+            .overlay(alignment: .leading) {
+                SideDrawerView(
+                    isPresented: $showSideDrawer,
+                    onSignOut: {
+                        gmailViewModel.signOut()
+                        showSideDrawer = false
+                    }
+                )
+                .frame(width: 280)
+                .offset(x: showSideDrawer ? 0 : -320)
+                .allowsHitTesting(showSideDrawer)
+            }
+            .animation(.easeOut(duration: 0.25), value: showSideDrawer)
             .ignoresSafeArea(edges: .bottom)
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
                 if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
@@ -147,9 +187,44 @@ struct InboxView: View {
                     }
                 )
             }
-            .sheet(isPresented: $showSearch) {
-                SearchView()
+            .sheet(item: $forwardingThread) { thread in
+                ForwardComposeView(
+                    thread: thread,
+                    isSending: gmailViewModel.isSending,
+                    onSend: { to, subject, body in
+                        Task {
+                            await gmailViewModel.sendEmail(to: to, subject: subject, body: body)
+                            forwardingThread = nil
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $showFeedback) {
+                FeedbackView()
                     .environmentObject(gmailViewModel)
+            }
+            .sheet(isPresented: $showSearch) {
+                SearchView(
+                    onOpenThread: { thread in
+                        showSearch = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            path.append(thread.id)
+                        }
+                    },
+                    onReply: { thread in
+                        showSearch = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            replyingToThread = thread
+                        }
+                    },
+                    onForward: { thread in
+                        showSearch = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            forwardingThread = thread
+                        }
+                    }
+                )
+                .environmentObject(gmailViewModel)
             }
         }
     }

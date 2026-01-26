@@ -1,6 +1,11 @@
 import SwiftUI
 import WebKit
 import UIKit
+import Combine
+
+enum DebugSettings {
+    static var showHTMLDebug = false
+}
 
 struct AvatarView: View {
     let initials: String
@@ -24,6 +29,7 @@ struct HeaderView: View {
     let title: String
     let showsBack: Bool
     let onBack: (() -> Void)?
+    var onMeTap: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -37,12 +43,15 @@ struct HeaderView: View {
                         .clipShape(Circle())
                 }
             } else {
-                Text("Me")
-                    .font(.caption.weight(.bold))
-                    .foregroundColor(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.black)
-                    .clipShape(Circle())
+                Button(action: { onMeTap?() }) {
+                    Text("Me")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.black)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
             }
 
             Text(title)
@@ -51,17 +60,60 @@ struct HeaderView: View {
             Spacer()
 
             if !showsBack {
-                Image(systemName: "magnifyingglass")
-                    .font(.title3)
-                    .foregroundColor(.gray)
-                    .padding(8)
-                    .background(Color(white: 0.96))
-                    .clipShape(Circle())
+                Spacer()
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.98))
+    }
+}
+
+struct SideDrawerView: View {
+    @Binding var isPresented: Bool
+    let onSignOut: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Settings")
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.gray)
+                        .frame(width: 28, height: 28)
+                        .background(Color(white: 0.95))
+                        .clipShape(Circle())
+                }
+            }
+
+            Rectangle()
+                .fill(Color(white: 0.92))
+                .frame(height: 1)
+
+            Button(action: onSignOut) {
+                HStack(spacing: 10) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.body.weight(.semibold))
+                    Text("Sign out")
+                        .font(.body.weight(.semibold))
+                }
+                .foregroundColor(.red.opacity(0.9))
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(white: 0.98))
+        .overlay(
+            Rectangle()
+                .fill(Color(white: 0.9))
+                .frame(width: 1),
+            alignment: .trailing
+        )
     }
 }
 
@@ -73,6 +125,7 @@ struct EmailCardView: View {
     let renderHTML: Bool
     let onThreadTap: (() -> Void)?
     var onReply: (() -> Void)?
+    var onForward: (() -> Void)?
     var onDelete: (() -> Void)?
     var onSave: (() -> Void)?
     var onCardAppear: (() -> Void)?
@@ -87,7 +140,6 @@ struct EmailCardView: View {
             maxHeight: maxCardHeight,
             pageWidth: pageWidth
         )
-        let pages = CardPage.pages(for: thread, renderHTML: renderHTML)
 
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -125,35 +177,44 @@ struct EmailCardView: View {
             .padding(.horizontal, 16)
 
             GeometryReader { geo in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 12) {
-                        ForEach(pages) { page in
-                            Group {
-                                switch page.kind {
-                                case .text(let text):
-                                    TextCardView(text: text, isRoot: isRoot)
-                                case .html(let html):
-                                    HTMLCardView(html: html)
-                                }
+                let cardWidth = geo.size.width * 0.8
+                if renderHTML, let html = thread.htmlBody, !html.isEmpty {
+                    // Use multi-page HTML rendering
+                    HTMLContentView(html: html, cardWidth: cardWidth, cardHeight: cardHeight)
+                } else {
+                    // Use text pages
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 12) {
+                            ForEach(thread.pages, id: \.self) { text in
+                                TextCardView(text: text, isRoot: isRoot)
+                                    .frame(width: cardWidth, height: cardHeight)
                             }
-                            .frame(width: geo.size.width * 0.8, height: cardHeight)
                         }
-                        Spacer(minLength: max(0, geo.size.width - (geo.size.width * 0.8) - 16))
+                        .scrollTargetLayout()
                     }
-                    .scrollTargetLayout()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
+                    .scrollIndicators(.hidden)
+                    .scrollTargetBehavior(.viewAligned)
+                    .contentMargins(.horizontal, 16, for: .scrollContent)
                 }
-                .scrollIndicators(.hidden)
-                .scrollTargetBehavior(.viewAligned)
             }
             .frame(height: cardHeight)
+            .padding(.vertical, 4)
 
             if !isDetailView {
                 HStack {
                     // Reply button
                     Button(action: { onReply?() }) {
                         Image(systemName: "arrowshape.turn.up.left")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.gray)
+                            .frame(width: 44, height: 44)
+                    }
+
+                    Spacer()
+
+                    // Forward button
+                    Button(action: { onForward?() }) {
+                        Image(systemName: "arrowshape.turn.up.right")
                             .font(.body.weight(.medium))
                             .foregroundColor(.gray)
                             .frame(width: 44, height: 44)
@@ -191,7 +252,7 @@ struct EmailCardView: View {
                     }
                     .disabled(thread.threadID == nil)
                 }
-                .padding(.horizontal, depth > 0 ? 44 : 58)
+                .padding(.horizontal, depth > 0 ? 44 : 48)
             }
         }
         .padding(.vertical, isRoot ? 12 : 8)
@@ -250,80 +311,149 @@ struct TextCardView: View {
     }
 }
 
-struct HTMLCardView: View {
+// Displays HTML content as horizontally scrollable page cards
+struct HTMLContentView: View {
     let html: String
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
     @StateObject private var renderer = HTMLSnapshotRenderer()
 
     var body: some View {
-        GeometryReader { geo in
-            Group {
-                if let image = renderer.snapshot {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                } else {
+        ScrollView(.horizontal) {
+            HStack(spacing: 12) {
+                if renderer.pages.isEmpty {
+                    // Show loading placeholder
                     Rectangle()
                         .fill(Color(white: 0.97))
+                        .frame(width: cardWidth, height: cardHeight)
+                        .cornerRadius(16)
                         .overlay(
                             ProgressView()
                                 .scaleEffect(0.8)
                         )
+                } else {
+                    ForEach(Array(renderer.pages.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topLeading) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: cardWidth, height: cardHeight, alignment: .top)
+
+                            if DebugSettings.showHTMLDebug {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("page \(index + 1)/\(renderer.pages.count)")
+                                    Text("HTML: \(html.count) chars")
+                                }
+                                .font(.caption2.monospaced())
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(6)
+                                .padding(8)
+                            }
+                        }
+                        .frame(width: cardWidth, height: cardHeight)
+                        .background(Color(white: 0.97))
+                        .cornerRadius(16)
+                    }
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
-            .onAppear {
-                renderer.render(html: html, size: geo.size)
-            }
+            .scrollTargetLayout()
         }
-        .background(Color(white: 0.97))
-        .cornerRadius(16)
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.viewAligned)
+        .contentMargins(.horizontal, 16, for: .scrollContent)
+        .onAppear {
+            renderer.render(html: html, size: CGSize(width: cardWidth, height: cardHeight))
+        }
     }
 }
 
 class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
-    @Published var snapshot: UIImage?
+    @Published var pages: [UIImage] = []
+    @Published var isLoading = true
 
-    private static var pending: Set<String> = []
+    private static let pendingQueue = DispatchQueue(label: "com.simba.pending")
+    private static var _pending: Set<String> = []
+
+    private static func isPending(_ key: String) -> Bool {
+        pendingQueue.sync { _pending.contains(key) }
+    }
+
+    private static func addPending(_ key: String) -> Bool {
+        pendingQueue.sync {
+            guard !_pending.contains(key) else { return false }
+            _pending.insert(key)
+            return true
+        }
+    }
+
+    private static func removePending(_ key: String) {
+        pendingQueue.async { _pending.remove(key) }
+    }
 
     private var webView: WKWebView?
-    private var currentKey: String?
-    private var targetSize: CGSize = .zero
+    private var baseKey: String?
+    private var pageSize: CGSize = .zero
+    private var expectedPages: Int = 0
+    private var currentPageIndex: Int = 0
+    private var cacheObserver: NSObjectProtocol?
 
     func render(html: String, size: CGSize) {
         let key = "\(html.hashValue)_\(Int(size.width))x\(Int(size.height))"
+        baseKey = key
+        pageSize = size
 
-        if let cached = HTMLSnapshotCache.shared.image(for: key) {
-            snapshot = cached
+        // Check if already fully cached
+        if let cached = HTMLSnapshotCache.shared.images(for: key) {
+            pages = cached
+            isLoading = false
             return
         }
 
-        guard !Self.pending.contains(key) else { return }
-        Self.pending.insert(key)
-        currentKey = key
-        targetSize = size
+        // Listen for completion notifications
+        if cacheObserver == nil {
+            cacheObserver = NotificationCenter.default.addObserver(
+                forName: HTMLSnapshotCache.didCompleteNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self = self,
+                      let completedKey = notification.userInfo?["baseKey"] as? String,
+                      completedKey == self.baseKey,
+                      let images = HTMLSnapshotCache.shared.images(for: completedKey) else { return }
+                self.pages = images
+                self.isLoading = false
+            }
+        }
+
+        guard Self.addPending(key) else {
+            // Another renderer is working on this - we'll get notified when done
+            return
+        }
 
         let config = WKWebViewConfiguration()
         config.suppressesIncrementalRendering = true
 
-        let wv = WKWebView(frame: CGRect(origin: .zero, size: targetSize), configuration: config)
+        // Create WebView with full width but allow content to determine height
+        let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: size.width, height: 10000), configuration: config)
         wv.navigationDelegate = self
         wv.isOpaque = false
         wv.backgroundColor = UIColor(white: 0.97, alpha: 1.0)
-        wv.scrollView.isScrollEnabled = false
+        wv.scrollView.isScrollEnabled = true
 
         webView = wv
 
+        // Don't constrain body height - let content flow naturally
         let styledHTML = """
         <!DOCTYPE html>
         <html>
           <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=\(Int(targetSize.width)), initial-scale=1.0, maximum-scale=1.0">
+            <meta name="viewport" content="width=\(Int(size.width)), initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <style>
               * { box-sizing: border-box; }
-              html, body { margin: 0; padding: 0; width: \(Int(targetSize.width))px; height: \(Int(targetSize.height))px; overflow: hidden; }
+              html, body { margin: 0; padding: 0; width: \(Int(size.width))px; }
               body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; }
               img { max-width: 100%; height: auto; display: block; }
               a { color: #111; }
@@ -339,8 +469,9 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.takeSnapshot()
+        // Wait for rendering, then measure content height
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.measureAndCapture()
         }
     }
 
@@ -348,31 +479,89 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
         cleanup()
     }
 
-    private func takeSnapshot() {
-        guard let wv = webView, let key = currentKey else { return }
+    private func measureAndCapture() {
+        guard let wv = webView else { return }
 
-        let config = WKSnapshotConfiguration()
-        config.rect = CGRect(origin: .zero, size: targetSize)
+        // Get the actual content height
+        wv.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, error in
+            guard let self = self,
+                  let contentHeight = result as? CGFloat else {
+                self?.cleanup()
+                return
+            }
 
-        wv.takeSnapshot(with: config) { [weak self] image, error in
-            guard let self = self else { return }
-            if let image = image {
-                HTMLSnapshotCache.shared.store(image: image, for: key)
+            let pageHeight = self.pageSize.height
+            self.expectedPages = max(1, Int(ceil(contentHeight / pageHeight)))
+
+            // Store page count
+            if let key = self.baseKey {
+                HTMLSnapshotCache.shared.setPageCount(self.expectedPages, for: key)
+            }
+
+            // Resize webview to full content height for capturing
+            wv.frame = CGRect(x: 0, y: 0, width: self.pageSize.width, height: contentHeight)
+
+            // Start capturing pages
+            self.currentPageIndex = 0
+            self.capturePage()
+        }
+    }
+
+    private func capturePage() {
+        guard let wv = webView, let key = baseKey else {
+            cleanup()
+            return
+        }
+
+        guard currentPageIndex < expectedPages else {
+            // All pages captured - mark complete
+            HTMLSnapshotCache.shared.markComplete(baseKey: key)
+            if let images = HTMLSnapshotCache.shared.images(for: key) {
                 DispatchQueue.main.async {
-                    self.snapshot = image
+                    self.pages = images
+                    self.isLoading = false
                 }
             }
-            self.cleanup()
+            cleanup()
+            return
+        }
+
+        let pageHeight = pageSize.height
+        let yOffset = CGFloat(currentPageIndex) * pageHeight
+        let remainingHeight = wv.frame.height - yOffset
+        let captureHeight = min(pageHeight, remainingHeight)
+
+        let config = WKSnapshotConfiguration()
+        config.rect = CGRect(x: 0, y: yOffset, width: pageSize.width, height: captureHeight)
+
+        wv.takeSnapshot(with: config) { [weak self] image, error in
+            guard let self = self, let image = image else {
+                self?.cleanup()
+                return
+            }
+
+            // Store this page
+            let pageKey = "\(key)_p\(self.currentPageIndex)"
+            HTMLSnapshotCache.shared.store(image: image, for: pageKey)
+
+            // Move to next page
+            self.currentPageIndex += 1
+            self.capturePage()
         }
     }
 
     private func cleanup() {
-        if let key = currentKey {
-            Self.pending.remove(key)
+        if let key = baseKey {
+            Self.removePending(key)
         }
         webView?.navigationDelegate = nil
         webView = nil
-        currentKey = nil
+    }
+
+    deinit {
+        if let observer = cacheObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 }
 
@@ -380,6 +569,7 @@ struct BottomNavView: View {
     let isUnreadOnly: Bool
     let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
+    var onFeedbackTap: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -401,8 +591,15 @@ struct BottomNavView: View {
                     .foregroundColor(.gray.opacity(0.5))
                     .frame(width: 44, height: 44)
             }
+            Spacer()
+            Button(action: { onFeedbackTap?() }) {
+                Image(systemName: "ladybug")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.gray.opacity(0.5))
+                    .frame(width: 44, height: 44)
+            }
         }
-        .padding(.horizontal, 48)
+        .padding(.horizontal, 36)
         .padding(.top, 12)
         .padding(.bottom, 34)
         .background(Color.white)
@@ -454,8 +651,16 @@ struct InlineReplyBar: View {
                     .lineLimit(1)
 
                 HStack(spacing: 10) {
-                    TextField("Add your reply...", text: $replyText, axis: .vertical)
+                    TextField(
+                        "",
+                        text: $replyText,
+                        prompt: Text("Add your reply...")
+                            .foregroundColor(.gray.opacity(0.8)),
+                        axis: .vertical
+                    )
                         .font(.subheadline)
+                        .foregroundColor(.black)
+                        .tint(.black)
                         .lineLimit(1...4)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -633,6 +838,170 @@ struct ReplyComposeView: View {
     }
 }
 
+struct ForwardComposeView: View {
+    @Environment(\.dismiss) private var dismiss
+    let thread: EmailThread
+    let isSending: Bool
+    let onSend: (String, String, String) -> Void
+
+    @State private var to = ""
+    @State private var note = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("To:")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    TextField("email@example.com", text: $to)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                }
+                .padding()
+
+                Divider()
+
+                VStack(alignment: .leading) {
+                    Text("Add a note (optional)")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    TextEditor(text: $note)
+                        .frame(height: 80)
+                        .padding(8)
+                        .background(Color(white: 0.97))
+                        .cornerRadius(8)
+                }
+                .padding()
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Original message")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("From: \(thread.sender.name)")
+                        .font(.caption)
+                    Text("Subject: \(thread.subject)")
+                        .font(.caption)
+                    Text(thread.pages.first ?? "")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(3)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(white: 0.97))
+
+                Spacer()
+            }
+            .navigationTitle("Forward")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSending ? "Sending..." : "Send") {
+                        let subject = "Fwd: \(thread.subject)"
+                        var body = ""
+                        if !note.isEmpty {
+                            body += "\(note)\n\n"
+                        }
+                        body += "---------- Forwarded message ----------\n"
+                        body += "From: \(thread.sender.name)\n"
+                        body += "Subject: \(thread.subject)\n\n"
+                        body += thread.pages.joined(separator: "\n")
+                        onSend(to, subject, body)
+                    }
+                    .disabled(to.isEmpty || isSending)
+                }
+            }
+        }
+    }
+}
+
+struct FeedbackView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var gmailViewModel: GmailViewModel
+    @State private var description = ""
+    @State private var screenshot: UIImage?
+    @State private var isSending = false
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                VStack(alignment: .leading) {
+                    Text("Describe the issue")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    TextEditor(text: $description)
+                        .frame(height: 120)
+                        .padding(8)
+                        .background(Color(white: 0.97))
+                        .cornerRadius(8)
+                }
+
+                HStack {
+                    Text("Screenshot (optional)")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Button("Capture") { captureScreenshot() }
+                        .font(.caption.weight(.medium))
+                }
+
+                if let img = screenshot {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 150)
+                        .cornerRadius(8)
+                }
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Report Bug")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSending ? "Sending..." : "Send") { sendFeedback() }
+                        .disabled(description.isEmpty || isSending)
+                }
+            }
+        }
+    }
+
+    private func captureScreenshot() {
+        guard let window = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow }) else { return }
+
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        screenshot = renderer.image { ctx in
+            window.layer.render(in: ctx.cgContext)
+        }
+    }
+
+    private func sendFeedback() {
+        isSending = true
+        Task {
+            await gmailViewModel.sendEmail(
+                to: "simba161921@gmail.com",
+                subject: "[Bug Report] User Feedback",
+                body: description
+            )
+            isSending = false
+            dismiss()
+        }
+    }
+}
+
 struct CardPage: Identifiable {
     enum Kind {
         case text(String)
@@ -649,9 +1018,8 @@ struct CardPage: Identifiable {
         var pages: [CardPage] = []
 
         if renderHTML, let html = thread.htmlBody, !html.isEmpty {
-            pages.append(contentsOf: HTMLChunker.chunk(html).map {
-                CardPage(kind: .html($0))
-            })
+            // Render full HTML as a single page (no chunking)
+            pages.append(CardPage(kind: .html(html)))
         } else {
             pages.append(contentsOf: thread.pages.map { CardPage(kind: .text($0)) })
         }

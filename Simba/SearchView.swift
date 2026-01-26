@@ -6,6 +6,10 @@ struct SearchView: View {
     @State private var searchText = ""
     @FocusState private var isFocused: Bool
 
+    var onOpenThread: ((EmailThread) -> Void)?
+    var onReply: ((EmailThread) -> Void)?
+    var onForward: ((EmailThread) -> Void)?
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -26,8 +30,15 @@ struct SearchView: View {
                         .foregroundColor(.gray)
                         .font(.body)
 
-                    TextField("Search emails...", text: $searchText)
+                    TextField(
+                        "",
+                        text: $searchText,
+                        prompt: Text("Search emails...")
+                            .foregroundColor(.gray.opacity(0.8))
+                    )
                         .focused($isFocused)
+                        .foregroundColor(.black)
+                        .tint(.black)
                         .submitLabel(.search)
                         .onSubmit {
                             Task { await gmailViewModel.search(query: searchText) }
@@ -65,20 +76,59 @@ struct SearchView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else if gmailViewModel.searchResults.isEmpty && !searchText.isEmpty {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Image(systemName: "magnifyingglass")
-                        .font(.largeTitle)
-                        .foregroundColor(.gray.opacity(0.5))
-                    Text("No results found")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                    Text("Try a different search term")
-                        .font(.subheadline)
-                        .foregroundColor(.gray.opacity(0.8))
-                    Spacer()
+                let suggestions = ContactStore.shared.suggestions(for: searchText)
+                if !suggestions.isEmpty {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Suggestions")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+
+                            ForEach(suggestions) { contact in
+                                Button {
+                                    searchText = "from:\(contact.email)"
+                                    Task { await gmailViewModel.search(query: searchText) }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        AvatarView(initials: contact.initials, isLarge: false)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(contact.name)
+                                                .font(.subheadline)
+                                                .foregroundColor(.black)
+                                            Text(contact.email)
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.plain)
+
+                                Divider()
+                                    .padding(.leading, 58)
+                            }
+                        }
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        Spacer()
+                        Image(systemName: "magnifyingglass")
+                            .font(.largeTitle)
+                            .foregroundColor(.gray.opacity(0.5))
+                        Text("No results found")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                        Text("Try a different search term")
+                            .font(.subheadline)
+                            .foregroundColor(.gray.opacity(0.8))
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             } else if gmailViewModel.searchResults.isEmpty {
                 VStack(spacing: 12) {
                     Spacer()
@@ -104,9 +154,14 @@ struct SearchView: View {
                                 isRoot: true,
                                 depth: 0,
                                 renderHTML: true,
-                                onThreadTap: nil,
-                                onReply: nil,
-                                onDelete: nil,
+                                onThreadTap: { onOpenThread?(thread) },
+                                onReply: { onReply?(thread) },
+                                onForward: { onForward?(thread) },
+                                onDelete: {
+                                    if let threadID = thread.threadID {
+                                        Task { await gmailViewModel.trashThread(threadID: threadID) }
+                                    }
+                                },
                                 onSave: nil,
                                 onCardAppear: nil
                             )
