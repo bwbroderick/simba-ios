@@ -72,6 +72,7 @@ struct HeaderView: View {
 struct SideDrawerView: View {
     @Binding var isPresented: Bool
     let onSignOut: () -> Void
+    var onBugReport: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -92,6 +93,16 @@ struct SideDrawerView: View {
             Rectangle()
                 .fill(Color(white: 0.92))
                 .frame(height: 1)
+
+            Button(action: { onBugReport?() }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "ladybug")
+                        .font(.body.weight(.semibold))
+                    Text("Report Bug")
+                        .font(.body.weight(.semibold))
+                }
+                .foregroundColor(.black.opacity(0.8))
+            }
 
             Button(action: onSignOut) {
                 HStack(spacing: 10) {
@@ -124,6 +135,7 @@ struct EmailCardView: View {
     let depth: Int
     let renderHTML: Bool
     let onThreadTap: (() -> Void)?
+    var onCardTap: (() -> Void)?
     var onReply: (() -> Void)?
     var onForward: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -181,6 +193,10 @@ struct EmailCardView: View {
                 if renderHTML, let html = thread.htmlBody, !html.isEmpty {
                     // Use multi-page HTML rendering
                     HTMLContentView(html: html, cardWidth: cardWidth, cardHeight: cardHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onCardTap?()
+                        }
                 } else {
                     // Use text pages
                     ScrollView(.horizontal) {
@@ -195,6 +211,10 @@ struct EmailCardView: View {
                     .scrollIndicators(.hidden)
                     .scrollTargetBehavior(.viewAligned)
                     .contentMargins(.horizontal, 16, for: .scrollContent)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onCardTap?()
+                    }
                 }
             }
             .frame(height: cardHeight)
@@ -569,7 +589,6 @@ struct BottomNavView: View {
     let isUnreadOnly: Bool
     let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
-    var onFeedbackTap: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -587,13 +606,6 @@ struct BottomNavView: View {
             Spacer()
             Button(action: onSearchTap) {
                 Image(systemName: "magnifyingglass")
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.gray.opacity(0.5))
-                    .frame(width: 44, height: 44)
-            }
-            Spacer()
-            Button(action: { onFeedbackTap?() }) {
-                Image(systemName: "ladybug")
                     .font(.title3.weight(.semibold))
                     .foregroundColor(.gray.opacity(0.5))
                     .frame(width: 44, height: 44)
@@ -927,41 +939,16 @@ struct FeedbackView: View {
     @State private var description = ""
     @State private var screenshot: UIImage?
     @State private var isSending = false
+    @State private var formViewForCapture: UIView?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                VStack(alignment: .leading) {
-                    Text("Describe the issue")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    TextEditor(text: $description)
-                        .frame(height: 120)
-                        .padding(8)
-                        .background(Color(white: 0.97))
-                        .cornerRadius(8)
-                }
-
-                HStack {
-                    Text("Screenshot (optional)")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Button("Capture") { captureScreenshot() }
-                        .font(.caption.weight(.medium))
-                }
-
-                if let img = screenshot {
-                    Image(uiImage: img)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(height: 150)
-                        .cornerRadius(8)
-                }
-
-                Spacer()
-            }
-            .padding()
+            FeedbackFormContent(
+                description: $description,
+                screenshot: $screenshot,
+                onCapture: captureScreenshot,
+                onViewReady: { view in formViewForCapture = view }
+            )
             .navigationTitle("Report Bug")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -977,14 +964,10 @@ struct FeedbackView: View {
     }
 
     private func captureScreenshot() {
-        guard let window = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .flatMap({ $0.windows })
-            .first(where: { $0.isKeyWindow }) else { return }
-
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        guard let view = formViewForCapture else { return }
+        let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
         screenshot = renderer.image { ctx in
-            window.layer.render(in: ctx.cgContext)
+            view.layer.render(in: ctx.cgContext)
         }
     }
 
@@ -1000,6 +983,68 @@ struct FeedbackView: View {
             dismiss()
         }
     }
+}
+
+private struct FeedbackFormContent: View {
+    @Binding var description: String
+    @Binding var screenshot: UIImage?
+    let onCapture: () -> Void
+    let onViewReady: (UIView) -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading) {
+                Text("Describe the issue")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                TextEditor(text: $description)
+                    .frame(height: 120)
+                    .padding(8)
+                    .background(Color(white: 0.97))
+                    .cornerRadius(8)
+            }
+
+            HStack {
+                Text("Screenshot (optional)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Spacer()
+                Button("Capture") { onCapture() }
+                    .font(.caption.weight(.medium))
+            }
+
+            if let img = screenshot {
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 150)
+                    .cornerRadius(8)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .background(
+            ViewCaptureHelper(onViewReady: onViewReady)
+        )
+    }
+}
+
+private struct ViewCaptureHelper: UIViewRepresentable {
+    let onViewReady: (UIView) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        DispatchQueue.main.async {
+            if let parentView = view.superview?.superview {
+                onViewReady(parentView)
+            }
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 struct CardPage: Identifiable {

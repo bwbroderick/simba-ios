@@ -4,6 +4,7 @@ struct SearchView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gmailViewModel: GmailViewModel
     @State private var searchText = ""
+    @State private var detailThread: EmailThread?
     @FocusState private var isFocused: Bool
 
     var onOpenThread: ((EmailThread) -> Void)?
@@ -155,6 +156,7 @@ struct SearchView: View {
                                 depth: 0,
                                 renderHTML: true,
                                 onThreadTap: { onOpenThread?(thread) },
+                                onCardTap: { detailThread = thread },
                                 onReply: { onReply?(thread) },
                                 onForward: { onForward?(thread) },
                                 onDelete: {
@@ -176,6 +178,15 @@ struct SearchView: View {
         }
         .onDisappear {
             gmailViewModel.clearSearchResults()
+        }
+        .fullScreenCover(item: $detailThread) { thread in
+            EmailDetailView(
+                thread: thread,
+                onOpenThread: { onOpenThread?(thread) },
+                onReply: { onReply?(thread) },
+                onForward: { onForward?(thread) }
+            )
+            .environmentObject(gmailViewModel)
         }
     }
 }

@@ -8,6 +8,7 @@ struct InboxView: View {
     @State private var showUnreadOnly = false
     @State private var replyingToThread: EmailThread?
     @State private var forwardingThread: EmailThread?
+    @State private var detailThread: EmailThread?
     @State private var showFeedback = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var showSearch = false
@@ -54,6 +55,9 @@ struct InboxView: View {
                                 renderHTML: true,
                                 onThreadTap: {
                                     path.append(thread.id)
+                                },
+                                onCardTap: {
+                                    detailThread = thread
                                 },
                                 onReply: {
                                     replyingToThread = thread
@@ -124,9 +128,6 @@ struct InboxView: View {
                             onUnreadToggle: {
                                 showUnreadOnly.toggle()
                                 Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
-                            },
-                            onFeedbackTap: {
-                                showFeedback = true
                             }
                         )
                     }
@@ -156,6 +157,12 @@ struct InboxView: View {
                     onSignOut: {
                         gmailViewModel.signOut()
                         showSideDrawer = false
+                    },
+                    onBugReport: {
+                        showSideDrawer = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showFeedback = true
+                        }
                     }
                 )
                 .frame(width: 280)
@@ -203,7 +210,7 @@ struct InboxView: View {
                 FeedbackView()
                     .environmentObject(gmailViewModel)
             }
-            .sheet(isPresented: $showSearch) {
+            .fullScreenCover(isPresented: $showSearch) {
                 SearchView(
                     onOpenThread: { thread in
                         showSearch = false
@@ -222,6 +229,21 @@ struct InboxView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             forwardingThread = thread
                         }
+                    }
+                )
+                .environmentObject(gmailViewModel)
+            }
+            .fullScreenCover(item: $detailThread) { thread in
+                EmailDetailView(
+                    thread: thread,
+                    onOpenThread: {
+                        path.append(thread.id)
+                    },
+                    onReply: {
+                        replyingToThread = thread
+                    },
+                    onForward: {
+                        forwardingThread = thread
                     }
                 )
                 .environmentObject(gmailViewModel)

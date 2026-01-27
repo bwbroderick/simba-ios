@@ -6,6 +6,7 @@ struct ThreadView: View {
     @EnvironmentObject var gmailViewModel: GmailViewModel
     @StateObject private var loader = GmailThreadLoader()
     @State private var showReplyCompose = false
+    @State private var detailMessage: EmailThread?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -28,24 +29,28 @@ struct ThreadView: View {
                     }
 
                     ForEach(messages) { message in
+                        let messageThread = EmailThread(
+                            threadID: nil,
+                            sender: message.sender,
+                            subject: message.subject,
+                            pages: message.pages,
+                            htmlBody: message.htmlBody,
+                            isUnread: false,
+                            messageCount: 0,
+                            timestamp: message.timestamp,
+                            messages: [],
+                            debugVisibility: nil
+                        )
                         EmailCardView(
-                            thread: EmailThread(
-                                threadID: nil,
-                                sender: message.sender,
-                                subject: message.subject,
-                                pages: message.pages,
-                                htmlBody: message.htmlBody,
-                                isUnread: false,
-                                messageCount: 0,
-                                timestamp: message.timestamp,
-                                messages: [],
-                                debugVisibility: nil
-                            ),
+                            thread: messageThread,
                             isDetailView: true,
                             isRoot: message.isRoot,
                             depth: message.depth,
                             renderHTML: true,
                             onThreadTap: nil,
+                            onCardTap: {
+                                detailMessage = messageThread
+                            },
                             onDelete: {
                                 if let threadID = thread.threadID {
                                     Task {
@@ -86,6 +91,10 @@ struct ThreadView: View {
                     Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body) }
                 }
             )
+        }
+        .fullScreenCover(item: $detailMessage) { messageThread in
+            EmailDetailView(thread: messageThread)
+                .environmentObject(gmailViewModel)
         }
     }
 }
