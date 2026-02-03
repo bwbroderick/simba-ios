@@ -204,13 +204,15 @@ class HTMLSnapshotCache {
             <meta charset="utf-8">
             <meta name="viewport" content="width=\(Int(pageSize.width)), initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <style>
-              * { box-sizing: border-box; }
-              html, body { margin: 0; padding: 0; width: \(Int(pageSize.width))px; }
-              body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; }
-              img { max-width: 100%; height: auto; display: block; }
+              * { box-sizing: border-box; max-width: 100% !important; }
+              html, body { margin: 0; padding: 0; width: \(Int(pageSize.width))px; overflow-x: hidden; }
+              body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; word-wrap: break-word; overflow-wrap: break-word; }
+              img { max-width: 100% !important; width: auto !important; height: auto !important; display: block; }
               a { color: #111; }
-              pre, code { white-space: pre-wrap; word-wrap: break-word; }
-              table { max-width: 100%; }
+              pre, code { white-space: pre-wrap; word-wrap: break-word; max-width: 100%; overflow-x: hidden; }
+              table { max-width: 100% !important; width: 100% !important; table-layout: fixed; border-collapse: collapse; }
+              td, th { word-wrap: break-word; overflow-wrap: break-word; }
+              div, span, p { max-width: 100% !important; }
             </style>
           </head>
           <body>\(html)</body>
@@ -222,10 +224,39 @@ class HTMLSnapshotCache {
         // Wait for load
         try? await Task.sleep(nanoseconds: 500_000_000)
 
-        // Get content height
-        guard let contentHeight = try? await webView.evaluateJavaScript("document.body.scrollHeight") as? CGFloat,
+        // Get content width and height
+        let measureJS = """
+        (function() {
+            var contentWidth = document.body.scrollWidth;
+            var contentHeight = document.body.scrollHeight;
+            return { width: contentWidth, height: contentHeight };
+        })()
+        """
+
+        guard let result = try? await webView.evaluateJavaScript(measureJS) as? [String: Any],
+              let contentWidth = result["width"] as? CGFloat,
+              var contentHeight = result["height"] as? CGFloat,
               contentHeight > 0 else {
             return
+        }
+
+        // If content is wider than target, scale it down
+        let targetWidth = pageSize.width
+        if contentWidth > targetWidth {
+            let scale = targetWidth / contentWidth
+            let scaleJS = """
+            (function() {
+                document.body.style.transformOrigin = 'top left';
+                document.body.style.transform = 'scale(\(scale))';
+                document.body.style.width = '\(Int(contentWidth))px';
+                return document.body.scrollHeight * \(scale);
+            })()
+            """
+            if let scaledHeight = try? await webView.evaluateJavaScript(scaleJS) as? CGFloat {
+                contentHeight = scaledHeight
+            } else {
+                contentHeight = contentHeight * scale
+            }
         }
 
         let expectedPages = max(1, Int(ceil(contentHeight / pageSize.height)))
