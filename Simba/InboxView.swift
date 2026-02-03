@@ -91,6 +91,9 @@ struct InboxView: View {
                 }
                 .padding(.bottom, 120)
                 .background(Color.white)
+                .refreshable {
+                    await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly)
+                }
                 .navigationDestination(for: UUID.self) { threadID in
                     let activeThreads = gmailViewModel.threads
                     if let thread = activeThreads.first(where: { $0.id == threadID }) {
