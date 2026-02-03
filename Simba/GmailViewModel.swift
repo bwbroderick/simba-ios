@@ -73,6 +73,10 @@ final class GmailViewModel: ObservableObject {
     }
 
     func fetchInbox(unreadOnly: Bool = false) async {
+        // Generate a unique ID for this fetch to detect stale results
+        let fetchID = UUID()
+        currentFetchID = fetchID
+
         guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
             errorMessage = "Missing access token."
             return
@@ -115,18 +119,31 @@ final class GmailViewModel: ObservableObject {
                 }
             }
 
+            // Only update if this is still the most recent fetch (prevents race conditions)
+            guard fetchID == currentFetchID else { return }
+
             threads = loadedThreads
-            saveCachedThreads(loadedThreads)
+            // Only save to cache when showing all emails, not filtered unread-only view
+            if !unreadOnly {
+                saveCachedThreads(loadedThreads)
+            }
 
             ContactStore.shared.extract(from: loadedThreads)
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch is CancellationError {
             // Task was cancelled (e.g., view dismissed) - not an error to display
+            return
         } catch {
-            errorMessage = error.localizedDescription
+            // Only show error if this is still the most recent fetch
+            if fetchID == currentFetchID {
+                errorMessage = error.localizedDescription
+            }
         }
 
-        isLoading = false
+        // Only update loading state if this is still the most recent fetch
+        if fetchID == currentFetchID {
+            isLoading = false
+        }
     }
 
     func queueMarkRead(threadID: String) {
@@ -171,6 +188,7 @@ final class GmailViewModel: ObservableObject {
         }
 
         if unreadOnlyActive {
+            // Remove from display list but don't save to cache - this is a filtered view
             threads.removeAll { $0.threadID == threadID }
         } else {
             threads = threads.map { thread in
@@ -190,8 +208,9 @@ final class GmailViewModel: ObservableObject {
                 }
                 return thread
             }
+            // Only save to cache when in "all emails" view to preserve full inbox state
+            saveCachedThreads(threads)
         }
-        saveCachedThreads(threads)
     }
 
     func trashThread(threadID: String) async {
@@ -484,6 +503,11 @@ final class GmailViewModel: ObservableObject {
         guard let data = try? JSONEncoder().encode(cached) else { return }
         try? data.write(to: cacheURL, options: [.atomic])
     }
+
+    private var pendingReadThreadIDs: Set<String> = []
+    private var readTask: Task<Void, Never>?
+    private var unreadOnlyActive = false
+    private var currentFetchID: UUID?
 }
 
 struct GmailMessageListResponse: Decodable {
@@ -563,6 +587,3 @@ struct CachedThread: Codable {
         )
     }
 }
-    private var pendingReadThreadIDs: Set<String> = []
-    private var readTask: Task<Void, Never>?
-    private var unreadOnlyActive = false
