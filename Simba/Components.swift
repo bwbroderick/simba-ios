@@ -472,13 +472,15 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
             <meta charset="utf-8">
             <meta name="viewport" content="width=\(Int(size.width)), initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <style>
-              * { box-sizing: border-box; }
-              html, body { margin: 0; padding: 0; width: \(Int(size.width))px; }
-              body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; }
-              img { max-width: 100%; height: auto; display: block; }
+              * { box-sizing: border-box; max-width: 100% !important; }
+              html, body { margin: 0; padding: 0; width: \(Int(size.width))px; overflow-x: hidden; }
+              body { font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #222; padding: 16px; background: #f7f7f7; word-wrap: break-word; overflow-wrap: break-word; }
+              img { max-width: 100% !important; width: auto !important; height: auto !important; display: block; }
               a { color: #111; }
-              pre, code { white-space: pre-wrap; word-wrap: break-word; }
-              table { max-width: 100%; }
+              pre, code { white-space: pre-wrap; word-wrap: break-word; max-width: 100%; overflow-x: hidden; }
+              table { max-width: 100% !important; width: 100% !important; table-layout: fixed; border-collapse: collapse; }
+              td, th { word-wrap: break-word; overflow-wrap: break-word; }
+              div, span, p { max-width: 100% !important; }
             </style>
           </head>
           <body>\(html)</body>
@@ -502,29 +504,64 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
     private func measureAndCapture() {
         guard let wv = webView else { return }
 
-        // Get the actual content height
-        wv.evaluateJavaScript("document.body.scrollHeight") { [weak self] result, error in
+        // Get the actual content width and height
+        let measureJS = """
+        (function() {
+            var contentWidth = document.body.scrollWidth;
+            var contentHeight = document.body.scrollHeight;
+            return { width: contentWidth, height: contentHeight };
+        })()
+        """
+
+        wv.evaluateJavaScript(measureJS) { [weak self] result, error in
             guard let self = self,
-                  let contentHeight = result as? CGFloat else {
+                  let dict = result as? [String: Any],
+                  let contentWidth = dict["width"] as? CGFloat,
+                  let contentHeight = dict["height"] as? CGFloat else {
                 self?.cleanup()
                 return
             }
 
-            let pageHeight = self.pageSize.height
-            self.expectedPages = max(1, Int(ceil(contentHeight / pageHeight)))
+            let targetWidth = self.pageSize.width
 
-            // Store page count
-            if let key = self.baseKey {
-                HTMLSnapshotCache.shared.setPageCount(self.expectedPages, for: key)
+            // If content is wider than target, scale it down
+            if contentWidth > targetWidth {
+                let scale = targetWidth / contentWidth
+                let scaleJS = """
+                (function() {
+                    document.body.style.transformOrigin = 'top left';
+                    document.body.style.transform = 'scale(\(scale))';
+                    document.body.style.width = '\(Int(contentWidth))px';
+                    return document.body.scrollHeight * \(scale);
+                })()
+                """
+
+                wv.evaluateJavaScript(scaleJS) { [weak self] result, _ in
+                    guard let self = self else { return }
+                    let scaledHeight = (result as? CGFloat) ?? (contentHeight * scale)
+                    self.finishMeasureAndCapture(webView: wv, contentHeight: scaledHeight)
+                }
+            } else {
+                self.finishMeasureAndCapture(webView: wv, contentHeight: contentHeight)
             }
-
-            // Resize webview to full content height for capturing
-            wv.frame = CGRect(x: 0, y: 0, width: self.pageSize.width, height: contentHeight)
-
-            // Start capturing pages
-            self.currentPageIndex = 0
-            self.capturePage()
         }
+    }
+
+    private func finishMeasureAndCapture(webView wv: WKWebView, contentHeight: CGFloat) {
+        let pageHeight = self.pageSize.height
+        self.expectedPages = max(1, Int(ceil(contentHeight / pageHeight)))
+
+        // Store page count
+        if let key = self.baseKey {
+            HTMLSnapshotCache.shared.setPageCount(self.expectedPages, for: key)
+        }
+
+        // Resize webview to full content height for capturing
+        wv.frame = CGRect(x: 0, y: 0, width: self.pageSize.width, height: contentHeight)
+
+        // Start capturing pages
+        self.currentPageIndex = 0
+        self.capturePage()
     }
 
     private func capturePage() {
