@@ -13,18 +13,21 @@ struct InboxView: View {
     @State private var keyboardHeight: CGFloat = 0
     @State private var showSearch = false
     @State private var showSideDrawer = false
+    @State private var scrollToTopTrigger = false
 
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        HeaderView(
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            HeaderView(
                             title: "Inbox",
                             showsBack: false,
                             onBack: nil,
                             onMeTap: { showSideDrawer = true }
                         )
+                        .id("feed-top")
 
                         if !gmailViewModel.isSignedIn {
                             GmailConnectCard(onConnect: gmailViewModel.signIn)
@@ -88,11 +91,16 @@ struct InboxView: View {
                             .padding(.vertical, 32)
                         }
                     }
-                }
-                .padding(.bottom, 120)
-                .background(Color.white)
-                .refreshable {
-                    await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly)
+                    .padding(.bottom, 120)
+                    .background(Color.white)
+                    .refreshable {
+                        await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly)
+                    }
+                    .onChange(of: scrollToTopTrigger) {
+                        withAnimation {
+                            scrollProxy.scrollTo("feed-top", anchor: .top)
+                        }
+                    }
                 }
                 .navigationDestination(for: UUID.self) { threadID in
                     let activeThreads = gmailViewModel.threads
@@ -125,6 +133,9 @@ struct InboxView: View {
                     } else {
                         BottomNavView(
                             isUnreadOnly: showUnreadOnly,
+                            onInboxTap: {
+                                scrollToTopTrigger.toggle()
+                            },
                             onSearchTap: {
                                 showSearch = true
                             },

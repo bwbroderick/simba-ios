@@ -624,15 +624,18 @@ class HTMLSnapshotRenderer: NSObject, ObservableObject, WKNavigationDelegate {
 
 struct BottomNavView: View {
     let isUnreadOnly: Bool
+    let onInboxTap: () -> Void
     let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
 
     var body: some View {
         HStack {
-            Image(systemName: "tray")
-                .font(.title3.weight(.semibold))
-                .foregroundColor(.black)
-                .frame(width: 44, height: 44)
+            Button(action: onInboxTap) {
+                Image(systemName: "tray")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.black)
+                    .frame(width: 44, height: 44)
+            }
             Spacer()
             Button(action: onUnreadToggle) {
                 Image(systemName: isUnreadOnly ? "envelope.badge.fill" : "envelope.badge")
