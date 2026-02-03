@@ -120,6 +120,8 @@ final class GmailViewModel: ObservableObject {
 
             ContactStore.shared.extract(from: loadedThreads)
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
+        } catch is CancellationError {
+            // Task was cancelled (e.g., view dismissed) - not an error to display
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -303,6 +305,8 @@ final class GmailViewModel: ObservableObject {
             }
 
             searchResults = loadedThreads
+        } catch is CancellationError {
+            // Task was cancelled - not an error to display
         } catch {
             errorMessage = error.localizedDescription
         }
