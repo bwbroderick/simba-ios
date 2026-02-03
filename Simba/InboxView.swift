@@ -129,7 +129,7 @@ struct InboxView: View {
                                 replyingToThread = nil
                             }
                         )
-                        .padding(.bottom, keyboardHeight > 0 ? keyboardHeight - 34 : 0)
+                        .padding(.bottom, keyboardHeight > 0 ? keyboardHeight : 0)
                     } else {
                         BottomNavView(
                             isUnreadOnly: showUnreadOnly,

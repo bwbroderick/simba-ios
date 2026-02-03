@@ -5,8 +5,9 @@ struct ThreadView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gmailViewModel: GmailViewModel
     @StateObject private var loader = GmailThreadLoader()
-    @State private var showReplyCompose = false
+    @State private var showInlineReply = false
     @State private var detailMessage: EmailThread?
+    @State private var keyboardHeight: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -66,12 +67,45 @@ struct ThreadView: View {
             .padding(.bottom, 96)
             .background(Color.white)
 
-            ReplyBarView(name: thread.sender.name) {
-                showReplyCompose = true
+            if showInlineReply {
+                InlineReplyBar(
+                    senderName: thread.sender.name,
+                    subject: thread.subject,
+                    recipientEmail: thread.sender.email ?? "",
+                    isSending: gmailViewModel.isSending,
+                    onSend: { replyText in
+                        let to = thread.sender.email ?? ""
+                        let subject = thread.subject.hasPrefix("Re:") ? thread.subject : "Re: \(thread.subject)"
+                        Task {
+                            await gmailViewModel.sendEmail(to: to, subject: subject, body: replyText)
+                            showInlineReply = false
+                        }
+                    },
+                    onCancel: {
+                        showInlineReply = false
+                    }
+                )
+                .padding(.bottom, keyboardHeight > 0 ? keyboardHeight : 0)
+            } else {
+                ReplyBarView(name: thread.sender.name) {
+                    showInlineReply = true
+                }
             }
         }
         .ignoresSafeArea(edges: .bottom)
         .navigationBarBackButtonHidden(true)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    keyboardHeight = frame.height
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = 0
+            }
+        }
         .task {
             if let threadID = thread.threadID {
                 if loader.messages.isEmpty {
@@ -81,16 +115,6 @@ struct ThreadView: View {
                     gmailViewModel.queueMarkRead(threadID: threadID)
                 }
             }
-        }
-        .sheet(isPresented: $showReplyCompose) {
-            ReplyComposeView(
-                to: thread.sender.email ?? "",
-                subject: thread.subject.hasPrefix("Re:") ? thread.subject : "Re: \(thread.subject)",
-                isSending: gmailViewModel.isSending,
-                onSend: { to, subject, body in
-                    Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body) }
-                }
-            )
         }
         .fullScreenCover(item: $detailMessage) { messageThread in
             EmailDetailView(thread: messageThread)
