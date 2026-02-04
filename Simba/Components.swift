@@ -256,21 +256,19 @@ struct EmailCardView: View {
                     Button(action: { onThreadTap?() }) {
                         Image(systemName: "bubble.left")
                             .font(.body.weight(.medium))
-                            .foregroundColor(thread.threadID != nil ? .gray : .gray.opacity(0.3))
+                            .foregroundColor(thread.messageCount > 1 ? .gray : .gray.opacity(0.3))
                             .frame(width: 44, height: 44)
                             .overlay(alignment: .topTrailing) {
-                                if thread.messageCount > 0 {
-                                    Text("\(thread.messageCount)")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(4)
-                                        .background(Color.blue)
-                                        .clipShape(Circle())
-                                        .offset(x: 8, y: 0)
-                                }
+                                Text("\(thread.messageCount)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(thread.messageCount > 1 ? Color.blue : Color.gray.opacity(0.4))
+                                    .clipShape(Circle())
+                                    .offset(x: 8, y: 0)
                             }
                     }
-                    .disabled(thread.threadID == nil)
+                    .disabled(thread.messageCount <= 1)
                 }
                 .padding(.horizontal, depth > 0 ? 44 : 48)
             }

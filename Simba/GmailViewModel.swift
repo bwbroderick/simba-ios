@@ -87,7 +87,7 @@ final class GmailViewModel: ObservableObject {
         unreadOnlyActive = unreadOnly
 
         do {
-            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages")!
+            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
             var queryItems = [
                 URLQueryItem(name: "maxResults", value: "20"),
                 URLQueryItem(name: "labelIds", value: "INBOX")
@@ -101,20 +101,20 @@ final class GmailViewModel: ObservableObject {
             listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
             let (listData, _) = try await URLSession.shared.data(for: listRequest)
-            let listResponse = try JSONDecoder().decode(GmailMessageListResponse.self, from: listData)
+            let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
-            let messageIDs = (listResponse.messages ?? []).map { $0.id }
+            let threadIDs = (listResponse.threads ?? []).map { $0.id }
             var loadedThreads: [EmailThread] = []
 
-            for messageID in messageIDs {
-                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/\(messageID)?format=full")!
+            for threadID in threadIDs {
+                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)?format=full")!
                 var detailRequest = URLRequest(url: detailURL)
                 detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
                 let (detailData, _) = try await URLSession.shared.data(for: detailRequest)
-                let detail = try JSONDecoder().decode(GmailMessageDetail.self, from: detailData)
+                let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
 
-                if let thread = Self.makeThread(from: detail) {
+                if let thread = Self.makeThread(from: threadDetail) {
                     loadedThreads.append(thread)
                 }
             }
@@ -294,7 +294,7 @@ final class GmailViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages")!
+            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
             listComponents.queryItems = [
                 URLQueryItem(name: "maxResults", value: "20"),
                 URLQueryItem(name: "q", value: query)
@@ -305,20 +305,20 @@ final class GmailViewModel: ObservableObject {
             listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
             let (listData, _) = try await URLSession.shared.data(for: listRequest)
-            let listResponse = try JSONDecoder().decode(GmailMessageListResponse.self, from: listData)
+            let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
-            let messageIDs = (listResponse.messages ?? []).map { $0.id }
+            let threadIDs = (listResponse.threads ?? []).map { $0.id }
             var loadedThreads: [EmailThread] = []
 
-            for messageID in messageIDs {
-                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/\(messageID)?format=full")!
+            for threadID in threadIDs {
+                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)?format=full")!
                 var detailRequest = URLRequest(url: detailURL)
                 detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
                 let (detailData, _) = try await URLSession.shared.data(for: detailRequest)
-                let detail = try JSONDecoder().decode(GmailMessageDetail.self, from: detailData)
+                let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
 
-                if let thread = Self.makeThread(from: detail) {
+                if let thread = Self.makeThread(from: threadDetail) {
                     loadedThreads.append(thread)
                 }
             }
@@ -335,6 +335,41 @@ final class GmailViewModel: ObservableObject {
 
     func clearSearchResults() {
         searchResults = []
+    }
+
+    private static func makeThread(from threadDetail: GmailInboxThreadDetail) -> EmailThread? {
+        // Use the first message for display in inbox
+        guard let firstMessage = threadDetail.messages.first else { return nil }
+
+        let headers = firstMessage.payload?.headers ?? []
+        let subject = headers.first(where: { $0.name.lowercased() == "subject" })?.value ?? "(No subject)"
+        let fromValue = headers.first(where: { $0.name.lowercased() == "from" })?.value ?? "Unknown Sender"
+        let dateValue = headers.first(where: { $0.name.lowercased() == "date" })?.value ?? ""
+
+        let senderName = parseSenderName(from: fromValue)
+        let senderEmail = parseEmail(from: fromValue)
+        let initials = initialsFromName(senderName)
+
+        let sender = Sender(name: senderName, email: senderEmail, initials: initials)
+        let snippet = firstMessage.snippet ?? ""
+        let pages = TextChunker.chunk(snippet)
+        let body = extractBodies(from: firstMessage.payload)
+
+        let isUnread = firstMessage.labelIds?.contains("UNREAD") ?? false
+        let messageCount = threadDetail.messages.count
+
+        return EmailThread(
+            threadID: threadDetail.id,
+            sender: sender,
+            subject: subject,
+            pages: pages.isEmpty ? [snippet] : pages,
+            htmlBody: body.html,
+            isUnread: isUnread,
+            messageCount: messageCount,
+            timestamp: relativeTimestamp(from: dateValue),
+            messages: [],
+            debugVisibility: nil
+        )
     }
 
     private static func makeThread(from detail: GmailMessageDetail) -> EmailThread? {
@@ -516,6 +551,19 @@ struct GmailMessageListResponse: Decodable {
 
 struct GmailMessageRef: Decodable {
     let id: String
+}
+
+struct GmailThreadListResponse: Decodable {
+    let threads: [GmailThreadRef]?
+}
+
+struct GmailThreadRef: Decodable {
+    let id: String
+}
+
+struct GmailInboxThreadDetail: Decodable {
+    let id: String
+    let messages: [GmailMessageDetail]
 }
 
 struct GmailMessageDetail: Decodable {
