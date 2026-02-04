@@ -8,6 +8,7 @@ struct ThreadView: View {
     @State private var showInlineReply = false
     @State private var detailMessage: EmailThread?
     @State private var keyboardHeight: CGFloat = 0
+    @State private var detailScrollFraction: Double = 0.0
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -19,6 +20,8 @@ struct ThreadView: View {
 
                     if loader.isLoading {
                         ProgressView("Loading thread…")
+                            .foregroundColor(.gray)
+                            .tint(.gray)
                             .padding(.vertical, 16)
                     }
 
@@ -49,7 +52,8 @@ struct ThreadView: View {
                             depth: message.depth,
                             renderHTML: true,
                             onThreadTap: nil,
-                            onCardTap: {
+                            onCardTap: { scrollFraction in
+                                detailScrollFraction = scrollFraction
                                 detailMessage = messageThread
                             },
                             onDelete: {
@@ -117,8 +121,11 @@ struct ThreadView: View {
             }
         }
         .fullScreenCover(item: $detailMessage) { messageThread in
-            EmailDetailView(thread: messageThread)
-                .environmentObject(gmailViewModel)
+            EmailDetailView(
+                thread: messageThread,
+                initialScrollFraction: detailScrollFraction
+            )
+            .environmentObject(gmailViewModel)
         }
     }
 }

@@ -135,12 +135,15 @@ struct EmailCardView: View {
     let depth: Int
     let renderHTML: Bool
     let onThreadTap: (() -> Void)?
-    var onCardTap: (() -> Void)?
+    var onCardTap: ((Double) -> Void)?  // Passes scroll fraction (0.0 to 1.0)
     var onReply: (() -> Void)?
     var onForward: (() -> Void)?
     var onDelete: (() -> Void)?
     var onSave: (() -> Void)?
     var onCardAppear: (() -> Void)?
+
+    @State private var visiblePageID: Int?
+    @State private var htmlPageCount: Int = 1
 
     var body: some View {
         let maxCardHeight: CGFloat = UIScreen.main.bounds.height * 0.6
@@ -192,28 +195,40 @@ struct EmailCardView: View {
                 let cardWidth = geo.size.width * 0.8
                 if renderHTML, let html = thread.htmlBody, !html.isEmpty {
                     // Use multi-page HTML rendering
-                    HTMLContentView(html: html, cardWidth: cardWidth, cardHeight: cardHeight)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onCardTap?()
+                    HTMLContentView(
+                        html: html,
+                        cardWidth: cardWidth,
+                        cardHeight: cardHeight,
+                        visiblePageID: $visiblePageID,
+                        onPageCountChanged: { count in
+                            htmlPageCount = count
                         }
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        let fraction = calculateScrollFraction(isHTML: true)
+                        onCardTap?(fraction)
+                    }
                 } else {
                     // Use text pages
                     ScrollView(.horizontal) {
                         HStack(spacing: 12) {
-                            ForEach(thread.pages, id: \.self) { text in
+                            ForEach(Array(thread.pages.enumerated()), id: \.offset) { index, text in
                                 TextCardView(text: text, isRoot: isRoot)
                                     .frame(width: cardWidth, height: cardHeight)
+                                    .id(index)
                             }
                         }
                         .scrollTargetLayout()
                     }
+                    .scrollPosition(id: $visiblePageID)
                     .scrollIndicators(.hidden)
                     .scrollTargetBehavior(.viewAligned)
                     .contentMargins(.horizontal, 16, for: .scrollContent)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        onCardTap?()
+                        let fraction = calculateScrollFraction(isHTML: false)
+                        onCardTap?(fraction)
                     }
                 }
             }
@@ -308,6 +323,13 @@ struct EmailCardView: View {
             onCardAppear?()
         }
     }
+
+    private func calculateScrollFraction(isHTML: Bool) -> Double {
+        let currentPage = visiblePageID ?? 0
+        let totalPages = isHTML ? htmlPageCount : thread.pages.count
+        guard totalPages > 1 else { return 0.0 }
+        return Double(currentPage) / Double(totalPages - 1)
+    }
 }
 
 struct TextCardView: View {
@@ -334,6 +356,8 @@ struct HTMLContentView: View {
     let html: String
     let cardWidth: CGFloat
     let cardHeight: CGFloat
+    @Binding var visiblePageID: Int?
+    var onPageCountChanged: ((Int) -> Void)?
     @StateObject private var renderer = HTMLSnapshotRenderer()
 
     var body: some View {
@@ -349,6 +373,7 @@ struct HTMLContentView: View {
                             ProgressView()
                                 .scaleEffect(0.8)
                         )
+                        .id(0)
                 } else {
                     ForEach(Array(renderer.pages.enumerated()), id: \.offset) { index, image in
                         ZStack(alignment: .topLeading) {
@@ -373,16 +398,21 @@ struct HTMLContentView: View {
                         .frame(width: cardWidth, height: cardHeight)
                         .background(Color(white: 0.97))
                         .cornerRadius(16)
+                        .id(index)
                     }
                 }
             }
             .scrollTargetLayout()
         }
+        .scrollPosition(id: $visiblePageID)
         .scrollIndicators(.hidden)
         .scrollTargetBehavior(.viewAligned)
         .contentMargins(.horizontal, 16, for: .scrollContent)
         .onAppear {
             renderer.render(html: html, size: CGSize(width: cardWidth, height: cardHeight))
+        }
+        .onChange(of: renderer.pages.count) { _, newCount in
+            onPageCountChanged?(newCount)
         }
     }
 }
@@ -890,84 +920,319 @@ struct ReplyComposeView: View {
 
 struct ForwardComposeView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var contactStore = ContactStore.shared
     let thread: EmailThread
     let isSending: Bool
     let onSend: (String, String, String) -> Void
 
-    @State private var to = ""
+    @State private var searchText = ""
+    @State private var selectedContacts: Set<String> = []  // emails
     @State private var note = ""
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredContacts: [ContactStore.Contact] {
+        let sorted = contactStore.contacts.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        if searchText.isEmpty {
+            return sorted
+        }
+        let query = searchText.lowercased()
+        return sorted.filter {
+            $0.name.lowercased().contains(query) || $0.email.contains(query)
+        }
+    }
+
+    private var isValidEmail: Bool {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        return query.contains("@") && query.contains(".")
+    }
+
+    private var canSend: Bool {
+        !selectedContacts.isEmpty || isValidEmail
+    }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("To:")
-                        .font(.subheadline)
+        VStack(spacing: 0) {
+            // Drag handle
+            Capsule()
+                .fill(Color(white: 0.85))
+                .frame(width: 36, height: 5)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+
+            // Header with back button and search
+            HStack(spacing: 12) {
+                Button(action: { dismiss() }) {
+                    Image(systemName: "chevron.left")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .frame(width: 32, height: 32)
+                        .background(Color(white: 0.95))
+                        .clipShape(Circle())
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
-                    TextField("email@example.com", text: $to)
-                        .keyboardType(.emailAddress)
+                        .font(.body)
+
+                    TextField(
+                        "",
+                        text: $searchText,
+                        prompt: Text("Search or enter email")
+                            .foregroundColor(.gray.opacity(0.8))
+                    )
+                        .font(.body)
+                        .foregroundColor(.black)
+                        .tint(.black)
                         .textInputAutocapitalization(.never)
-                }
-                .padding()
-
-                Divider()
-
-                VStack(alignment: .leading) {
-                    Text("Add a note (optional)")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    TextEditor(text: $note)
-                        .frame(height: 80)
-                        .padding(8)
-                        .background(Color(white: 0.97))
-                        .cornerRadius(8)
-                }
-                .padding()
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Original message")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("From: \(thread.sender.name)")
-                        .font(.caption)
-                    Text("Subject: \(thread.subject)")
-                        .font(.caption)
-                    Text(thread.pages.first ?? "")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(3)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(white: 0.97))
-
-                Spacer()
-            }
-            .navigationTitle("Forward")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSending ? "Sending..." : "Send") {
-                        let subject = "Fwd: \(thread.subject)"
-                        var body = ""
-                        if !note.isEmpty {
-                            body += "\(note)\n\n"
+                        .keyboardType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .focused($isSearchFocused)
+                        .onSubmit {
+                            if isValidEmail {
+                                selectedContacts.insert(searchText.trimmingCharacters(in: .whitespaces).lowercased())
+                                searchText = ""
+                            }
                         }
-                        body += "---------- Forwarded message ----------\n"
-                        body += "From: \(thread.sender.name)\n"
-                        body += "Subject: \(thread.subject)\n\n"
-                        body += thread.pages.joined(separator: "\n")
-                        onSend(to, subject, body)
+
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                                .font(.body)
+                        }
                     }
-                    .disabled(to.isEmpty || isSending)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(white: 0.95))
+                .cornerRadius(10)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+
+            Rectangle()
+                .fill(Color(white: 0.92))
+                .frame(height: 1)
+
+            // Selected contacts chips
+            if !selectedContacts.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(selectedContacts), id: \.self) { email in
+                            HStack(spacing: 6) {
+                                Text(displayName(for: email))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundColor(.black)
+                                Button(action: { selectedContacts.remove(email) }) {
+                                    Image(systemName: "xmark")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(white: 0.92))
+                            .cornerRadius(16)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+
+                Rectangle()
+                    .fill(Color(white: 0.92))
+                    .frame(height: 1)
+            }
+
+            // Contacts list
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Add email option when typing valid email
+                    if isValidEmail && !selectedContacts.contains(searchText.lowercased()) {
+                        Button(action: {
+                            selectedContacts.insert(searchText.trimmingCharacters(in: .whitespaces).lowercased())
+                            searchText = ""
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "plus")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundColor(.gray)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color(white: 0.95))
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color(white: 0.9), lineWidth: 1)
+                                    )
+                                    .clipShape(Circle())
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Add email")
+                                        .font(.subheadline)
+                                        .foregroundColor(.black)
+                                    Text(searchText)
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider()
+                            .padding(.leading, 58)
+                    }
+
+                    if !filteredContacts.isEmpty {
+                        Text("Suggestions")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+
+                        ForEach(filteredContacts) { contact in
+                            Button {
+                                if selectedContacts.contains(contact.email) {
+                                    selectedContacts.remove(contact.email)
+                                } else {
+                                    selectedContacts.insert(contact.email)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ZStack(alignment: .bottomTrailing) {
+                                        AvatarView(initials: contact.initials, isLarge: false)
+
+                                        if selectedContacts.contains(contact.email) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2)
+                                                .foregroundStyle(.white, .black)
+                                                .offset(x: 2, y: 2)
+                                        }
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(contact.name)
+                                            .font(.subheadline)
+                                            .foregroundColor(.black)
+                                        Text(contact.email)
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 58)
+                        }
+                    } else if !isValidEmail {
+                        VStack(spacing: 12) {
+                            Image(systemName: "at")
+                                .font(.system(size: 36))
+                                .foregroundColor(.gray.opacity(0.4))
+                            Text(searchText.isEmpty ? "No contacts yet" : "No matches")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.gray)
+                            if !searchText.isEmpty {
+                                Text("Enter a full email address")
+                                    .font(.caption)
+                                    .foregroundColor(.gray.opacity(0.8))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            // Message input and send button
+            VStack(spacing: 10) {
+                Rectangle()
+                    .fill(Color(white: 0.92))
+                    .frame(height: 1)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Forwarding")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.gray)
+                    Text("\(thread.subject) — \(thread.sender.name)")
+                        .font(.caption)
+                        .foregroundColor(.gray.opacity(0.8))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+                TextField(
+                    "",
+                    text: $note,
+                    prompt: Text("Write a message...")
+                        .foregroundColor(.gray.opacity(0.8)),
+                    axis: .vertical
+                )
+                    .font(.body)
+                    .foregroundColor(.black)
+                    .tint(.black)
+                    .lineLimit(1...3)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(white: 0.95))
+                    .cornerRadius(20)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+
+                Button(action: sendForward) {
+                    Text(isSending ? "Sending..." : "Send")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(canSend ? Color.black : Color.gray.opacity(0.3))
+                        .cornerRadius(24)
+                }
+                .disabled(!canSend || isSending)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 20)
             }
         }
+        .background(Color.white)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Color.white)
+        .presentationDragIndicator(.hidden)
+    }
+
+    private func displayName(for email: String) -> String {
+        if let contact = contactStore.contacts.first(where: { $0.email == email }) {
+            return contact.name
+        }
+        return email
+    }
+
+    private func sendForward() {
+        var allRecipients = selectedContacts
+        if isValidEmail {
+            allRecipients.insert(searchText.trimmingCharacters(in: .whitespaces).lowercased())
+        }
+        let recipients = allRecipients.joined(separator: ", ")
+        let subject = "Fwd: \(thread.subject)"
+        var body = ""
+        if !note.isEmpty {
+            body += "\(note)\n\n"
+        }
+        body += "---------- Forwarded message ----------\n"
+        body += "From: \(thread.sender.name)\n"
+        body += "Subject: \(thread.subject)\n\n"
+        body += thread.pages.joined(separator: "\n")
+        onSend(recipients, subject, body)
+        dismiss()
     }
 }
 

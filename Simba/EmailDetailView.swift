@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EmailDetailView: View {
     let thread: EmailThread
+    var initialScrollFraction: Double = 0.0
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var gmailViewModel: GmailViewModel
 
@@ -71,7 +72,10 @@ struct EmailDetailView: View {
 
                 // HTML Content
                 if let html = thread.htmlBody, !html.isEmpty {
-                    InteractiveHTMLView(html: html) { url in
+                    InteractiveHTMLView(
+                        html: html,
+                        initialScrollFraction: initialScrollFraction
+                    ) { url in
                         UIApplication.shared.open(url)
                     }
                 } else {

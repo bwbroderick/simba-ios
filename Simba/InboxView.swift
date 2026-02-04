@@ -9,6 +9,7 @@ struct InboxView: View {
     @State private var replyingToThread: EmailThread?
     @State private var forwardingThread: EmailThread?
     @State private var detailThread: EmailThread?
+    @State private var detailScrollFraction: Double = 0.0
     @State private var showFeedback = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var showSearch = false
@@ -59,7 +60,8 @@ struct InboxView: View {
                                 onThreadTap: {
                                     path.append(thread.id)
                                 },
-                                onCardTap: {
+                                onCardTap: { scrollFraction in
+                                    detailScrollFraction = scrollFraction
                                     detailThread = thread
                                 },
                                 onReply: {
@@ -90,6 +92,7 @@ struct InboxView: View {
                             )
                             .padding(.vertical, 32)
                         }
+                    }
                     }
                     .padding(.bottom, 120)
                     .background(Color.white)
@@ -146,6 +149,7 @@ struct InboxView: View {
                         )
                     }
                 }
+                .background(Color.white.ignoresSafeArea(edges: .bottom))
 
                 if replyingToThread == nil {
                     FloatingComposeButton {
@@ -250,6 +254,7 @@ struct InboxView: View {
             .fullScreenCover(item: $detailThread) { thread in
                 EmailDetailView(
                     thread: thread,
+                    initialScrollFraction: detailScrollFraction,
                     onOpenThread: {
                         path.append(thread.id)
                     },

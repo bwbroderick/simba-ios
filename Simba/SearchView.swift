@@ -5,6 +5,7 @@ struct SearchView: View {
     @EnvironmentObject var gmailViewModel: GmailViewModel
     @State private var searchText = ""
     @State private var detailThread: EmailThread?
+    @State private var detailScrollFraction: Double = 0.0
     @FocusState private var isFocused: Bool
 
     var onOpenThread: ((EmailThread) -> Void)?
@@ -156,7 +157,10 @@ struct SearchView: View {
                                 depth: 0,
                                 renderHTML: true,
                                 onThreadTap: { onOpenThread?(thread) },
-                                onCardTap: { detailThread = thread },
+                                onCardTap: { scrollFraction in
+                                    detailScrollFraction = scrollFraction
+                                    detailThread = thread
+                                },
                                 onReply: { onReply?(thread) },
                                 onForward: { onForward?(thread) },
                                 onDelete: {
@@ -182,6 +186,7 @@ struct SearchView: View {
         .fullScreenCover(item: $detailThread) { thread in
             EmailDetailView(
                 thread: thread,
+                initialScrollFraction: detailScrollFraction,
                 onOpenThread: { onOpenThread?(thread) },
                 onReply: { onReply?(thread) },
                 onForward: { onForward?(thread) }

@@ -3,10 +3,11 @@ import WebKit
 
 struct InteractiveHTMLView: UIViewRepresentable {
     let html: String
+    var initialScrollFraction: Double = 0.0
     var onLinkTap: ((URL) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onLinkTap: onLinkTap)
+        Coordinator(onLinkTap: onLinkTap, initialScrollFraction: initialScrollFraction)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -124,9 +125,12 @@ struct InteractiveHTMLView: UIViewRepresentable {
 
     class Coordinator: NSObject, WKNavigationDelegate {
         let onLinkTap: ((URL) -> Void)?
+        let initialScrollFraction: Double
+        private var hasScrolledToInitialPosition = false
 
-        init(onLinkTap: ((URL) -> Void)?) {
+        init(onLinkTap: ((URL) -> Void)?, initialScrollFraction: Double) {
             self.onLinkTap = onLinkTap
+            self.initialScrollFraction = initialScrollFraction
         }
 
         func webView(_ webView: WKWebView,
@@ -152,6 +156,23 @@ struct InteractiveHTMLView: UIViewRepresentable {
             }
 
             decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard !hasScrolledToInitialPosition, initialScrollFraction > 0 else { return }
+            hasScrolledToInitialPosition = true
+
+            // Wait briefly for content to fully render, then scroll
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let scrollScript = """
+                    (function() {
+                        var scrollHeight = document.body.scrollHeight - window.innerHeight;
+                        var scrollTo = scrollHeight * \(self.initialScrollFraction);
+                        window.scrollTo(0, scrollTo);
+                    })();
+                """
+                webView.evaluateJavaScript(scrollScript, completionHandler: nil)
+            }
         }
     }
 }
