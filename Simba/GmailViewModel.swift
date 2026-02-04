@@ -77,8 +77,9 @@ final class GmailViewModel: ObservableObject {
         let fetchID = UUID()
         currentFetchID = fetchID
 
-        guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
-            errorMessage = "Missing access token."
+        // Refresh access token before making API calls
+        guard let token = await refreshedAccessToken() else {
+            errorMessage = "Missing or expired access token."
             return
         }
 
@@ -100,7 +101,10 @@ final class GmailViewModel: ObservableObject {
             var listRequest = URLRequest(url: listURL)
             listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-            let (listData, _) = try await URLSession.shared.data(for: listRequest)
+            let (listData, listURLResponse) = try await URLSession.shared.data(for: listRequest)
+            if let httpResponse = listURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                throw NSError(domain: "GmailAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch inbox (HTTP \(httpResponse.statusCode))"])
+            }
             let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
             let threadIDs = (listResponse.threads ?? []).map { $0.id }
@@ -111,7 +115,10 @@ final class GmailViewModel: ObservableObject {
                 var detailRequest = URLRequest(url: detailURL)
                 detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-                let (detailData, _) = try await URLSession.shared.data(for: detailRequest)
+                let (detailData, detailURLResponse) = try await URLSession.shared.data(for: detailRequest)
+                if let httpResponse = detailURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                    continue // Skip threads that fail to load
+                }
                 let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
 
                 if let thread = Self.makeThread(from: threadDetail) {
@@ -280,13 +287,14 @@ final class GmailViewModel: ObservableObject {
     }
 
     func search(query: String) async {
-        guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
-            errorMessage = "Missing access token."
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            searchResults = []
             return
         }
 
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            searchResults = []
+        // Refresh access token before making API calls
+        guard let token = await refreshedAccessToken() else {
+            errorMessage = "Missing or expired access token."
             return
         }
 
@@ -304,7 +312,10 @@ final class GmailViewModel: ObservableObject {
             var listRequest = URLRequest(url: listURL)
             listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-            let (listData, _) = try await URLSession.shared.data(for: listRequest)
+            let (listData, listURLResponse) = try await URLSession.shared.data(for: listRequest)
+            if let httpResponse = listURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                throw NSError(domain: "GmailAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Search failed (HTTP \(httpResponse.statusCode))"])
+            }
             let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
             let threadIDs = (listResponse.threads ?? []).map { $0.id }
@@ -315,7 +326,10 @@ final class GmailViewModel: ObservableObject {
                 var detailRequest = URLRequest(url: detailURL)
                 detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-                let (detailData, _) = try await URLSession.shared.data(for: detailRequest)
+                let (detailData, detailURLResponse) = try await URLSession.shared.data(for: detailRequest)
+                if let httpResponse = detailURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                    continue // Skip threads that fail to load
+                }
                 let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
 
                 if let thread = Self.makeThread(from: threadDetail) {
@@ -537,6 +551,20 @@ final class GmailViewModel: ObservableObject {
         let cached = threads.map { CachedThread(from: $0) }
         guard let data = try? JSONEncoder().encode(cached) else { return }
         try? data.write(to: cacheURL, options: [.atomic])
+    }
+
+    private func refreshedAccessToken() async -> String? {
+        guard let user = GIDSignIn.sharedInstance.currentUser else { return nil }
+        return await withCheckedContinuation { continuation in
+            user.refreshTokensIfNeeded { user, error in
+                if let error {
+                    print("Token refresh failed: \(error.localizedDescription)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: user?.accessToken.tokenString)
+            }
+        }
     }
 
     private var pendingReadThreadIDs: Set<String> = []
