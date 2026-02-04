@@ -88,7 +88,7 @@ struct EmailDetailView: View {
 
                 // Action bar
                 ActionBar(
-                    hasThread: thread.messageCount > 0,
+                    hasThread: thread.messageCount > 1,
                     messageCount: thread.messageCount,
                     onReply: {
                         if let onReply = onReply {
@@ -191,15 +191,13 @@ private struct ActionBar: View {
                         Image(systemName: "bubble.left")
                             .font(.title3.weight(.medium))
 
-                        if messageCount > 0 {
-                            Text("\(messageCount)")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(3)
-                                .background(Color.blue)
-                                .clipShape(Circle())
-                                .offset(x: 8, y: -4)
-                        }
+                        Text("\(messageCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(3)
+                            .background(hasThread ? Color.blue : Color.gray.opacity(0.4))
+                            .clipShape(Circle())
+                            .offset(x: 8, y: -4)
                     }
                     Text("Thread")
                         .font(.caption2)
