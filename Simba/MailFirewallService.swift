@@ -118,7 +118,7 @@ final class MailFirewallService: ObservableObject {
     }
 
     func fetchReviewEmails() async throws -> [FirewallEmail] {
-        let url = URL(string: "\(baseURL)/review")!
+        let url = URL(string: "\(baseURL)/emails/review")!
         let request = authorizedRequest(url: url)
         return try await performRequest(request)
     }
@@ -148,19 +148,19 @@ final class MailFirewallService: ObservableObject {
     }
 
     func approveEmail(id: String) async throws -> ActionResponse {
-        let url = URL(string: "\(baseURL)/review/\(id)/approve")!
+        let url = URL(string: "\(baseURL)/emails/\(id)/approve")!
         let request = authorizedRequest(url: url, method: "POST")
         return try await performAction(request)
     }
 
     func approveOnce(id: String) async throws -> ActionResponse {
-        let url = URL(string: "\(baseURL)/review/\(id)/approve-once")!
+        let url = URL(string: "\(baseURL)/emails/\(id)/approve-once")!
         let request = authorizedRequest(url: url, method: "POST")
         return try await performAction(request)
     }
 
     func rejectEmail(id: String) async throws -> ActionResponse {
-        let url = URL(string: "\(baseURL)/review/\(id)/reject")!
+        let url = URL(string: "\(baseURL)/emails/\(id)/reject")!
         let request = authorizedRequest(url: url, method: "POST")
         return try await performAction(request)
     }
