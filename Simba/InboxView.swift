@@ -13,6 +13,7 @@ struct InboxView: View {
     @State private var showFeedback = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var showSearch = false
+    @State private var showFirewall = false
     @State private var showSideDrawer = false
     @State private var scrollToTopTrigger = false
 
@@ -97,7 +98,14 @@ struct InboxView: View {
                     .padding(.bottom, 120)
                     .background(Color.white)
                     .refreshable {
-                        await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly)
+                        // Run fetch in an unstructured Task so it is NOT cancelled
+                        // when SwiftUI cancels the refreshable task (which it does
+                        // whenever the ScrollView content changes mid-refresh).
+                        // await task.value keeps the spinner visible until done.
+                        let task = Task {
+                            await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly, isRefresh: true)
+                        }
+                        _ = await task.value
                     }
                     .onChange(of: scrollToTopTrigger) {
                         withAnimation {
@@ -145,6 +153,9 @@ struct InboxView: View {
                             onUnreadToggle: {
                                 showUnreadOnly.toggle()
                                 Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
+                            },
+                            onShieldTap: {
+                                showFirewall = true
                             }
                         )
                     }
@@ -227,6 +238,9 @@ struct InboxView: View {
             .sheet(isPresented: $showFeedback) {
                 FeedbackView()
                     .environmentObject(gmailViewModel)
+            }
+            .fullScreenCover(isPresented: $showFirewall) {
+                MailFirewallView()
             }
             .fullScreenCover(isPresented: $showSearch) {
                 SearchView(

@@ -72,7 +72,7 @@ final class GmailViewModel: ObservableObject {
         threads = []
     }
 
-    func fetchInbox(unreadOnly: Bool = false) async {
+    func fetchInbox(unreadOnly: Bool = false, isRefresh: Bool = false) async {
         // Generate a unique ID for this fetch to detect stale results
         let fetchID = UUID()
         currentFetchID = fetchID
@@ -83,7 +83,12 @@ final class GmailViewModel: ObservableObject {
             return
         }
 
-        isLoading = true
+        // Only show loading indicator for initial loads, not pull-to-refresh
+        // (pull-to-refresh has its own spinner; showing ProgressView changes
+        // ScrollView content which causes SwiftUI to cancel the refresh task)
+        if !isRefresh {
+            isLoading = true
+        }
         errorMessage = nil
         unreadOnlyActive = unreadOnly
 
@@ -139,6 +144,10 @@ final class GmailViewModel: ObservableObject {
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch is CancellationError {
             // Task was cancelled (e.g., view dismissed) - not an error to display
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession throws URLError(.cancelled) when the Swift task is cancelled;
+            // this is different from CancellationError and must be caught separately
             return
         } catch {
             // Only show error if this is still the most recent fetch
@@ -340,6 +349,8 @@ final class GmailViewModel: ObservableObject {
             searchResults = loadedThreads
         } catch is CancellationError {
             // Task was cancelled - not an error to display
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            // URLSession cancelled - not an error to display
         } catch {
             errorMessage = error.localizedDescription
         }
