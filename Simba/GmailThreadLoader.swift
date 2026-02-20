@@ -42,6 +42,7 @@ struct GmailThreadDetail: Decodable {
 }
 
 struct GmailThreadMessage: Decodable {
+    let id: String?
     let snippet: String?
     let payload: GmailMessagePayload?
 }
@@ -62,14 +63,19 @@ enum GmailMessageParser {
         let pages = TextChunker.chunk(snippet)
         let body = GmailMessageParser.extractBodies(from: detail.payload)
 
+        let messageId = detail.id ?? ""
+        let attachments = GmailViewModel.extractAttachments(from: detail.payload, messageId: messageId)
+
         return EmailMessage(
+            messageId: detail.id,
             sender: sender,
             subject: subject,
             pages: pages.isEmpty ? [snippet] : pages,
             htmlBody: body.html,
             timestamp: GmailMessageParser.relativeTimestamp(from: dateValue),
             isRoot: isRoot,
-            depth: 0
+            depth: 0,
+            attachments: attachments
         )
     }
 

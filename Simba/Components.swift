@@ -73,6 +73,9 @@ struct SideDrawerView: View {
     @Binding var isPresented: Bool
     let onSignOut: () -> Void
     var onBugReport: (() -> Void)?
+    var labels: [GmailLabel] = []
+    var currentLabel: GmailLabel?
+    var onLabelTap: ((GmailLabel) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -93,6 +96,44 @@ struct SideDrawerView: View {
             Rectangle()
                 .fill(Color(white: 0.92))
                 .frame(height: 1)
+
+            if !labels.isEmpty {
+                Text("Mailboxes")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.gray)
+                    .padding(.top, 2)
+
+                ForEach(labels) { label in
+                    Button(action: {
+                        onLabelTap?(label)
+                        isPresented = false
+                    }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: label.iconName)
+                                .font(.body.weight(.medium))
+                                .frame(width: 22)
+                            Text(label.displayName)
+                                .font(.body.weight(currentLabel?.id == label.id ? .semibold : .regular))
+                        }
+                        .foregroundColor(currentLabel?.id == label.id ? .black : .black.opacity(0.7))
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            currentLabel?.id == label.id
+                                ? Color(white: 0.92)
+                                : Color.clear
+                        )
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Rectangle()
+                    .fill(Color(white: 0.92))
+                    .frame(height: 1)
+                    .padding(.top, 4)
+            }
 
             Button(action: { onBugReport?() }) {
                 HStack(spacing: 10) {
@@ -141,6 +182,9 @@ struct EmailCardView: View {
     var onDelete: (() -> Void)?
     var onSave: (() -> Void)?
     var onCardAppear: (() -> Void)?
+    var onStar: (() -> Void)?
+    var onArchive: (() -> Void)?
+    var onAttachmentTap: ((EmailAttachment) -> Void)?
 
     @State private var visiblePageID: Int?
     @State private var htmlPageCount: Int = 1
@@ -180,6 +224,13 @@ struct EmailCardView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(.gray.opacity(0.7))
                             .tracking(0.8)
+
+                        Button(action: { onStar?() }) {
+                            Image(systemName: thread.isStarred ? "star.fill" : "star")
+                                .font(.caption)
+                                .foregroundColor(thread.isStarred ? .orange : .gray.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Text(thread.subject)
@@ -235,11 +286,51 @@ struct EmailCardView: View {
             .frame(height: cardHeight)
             .padding(.vertical, 4)
 
+            // Attachment chips
+            if !thread.attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(thread.attachments) { attachment in
+                            Button(action: { onAttachmentTap?(attachment) }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: attachment.iconName)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundColor(.gray)
+                                    Text(attachment.filename)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundColor(.black.opacity(0.8))
+                                        .lineLimit(1)
+                                    Text(attachment.formattedSize)
+                                        .font(.caption2)
+                                        .foregroundColor(.gray.opacity(0.7))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color(white: 0.95))
+                                .cornerRadius(12)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+
             if !isDetailView {
                 HStack {
                     // Reply button
                     Button(action: { onReply?() }) {
                         Image(systemName: "arrowshape.turn.up.left")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.gray)
+                            .frame(width: 44, height: 44)
+                    }
+
+                    Spacer()
+
+                    // Archive button
+                    Button(action: { onArchive?() }) {
+                        Image(systemName: "archivebox")
                             .font(.body.weight(.medium))
                             .foregroundColor(.gray)
                             .frame(width: 44, height: 44)
@@ -655,15 +746,21 @@ struct BottomNavView: View {
     let onInboxTap: () -> Void
     let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
+    var labelName: String = "Inbox"
     let onShieldTap: () -> Void
 
     var body: some View {
         HStack {
             Button(action: onInboxTap) {
-                Image(systemName: "tray")
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.black)
-                    .frame(width: 44, height: 44)
+                VStack(spacing: 2) {
+                    Image(systemName: "tray")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.black)
+                    Text(labelName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.black.opacity(0.7))
+                }
+                .frame(width: 56, height: 44)
             }
             Spacer()
             Button(action: onUnreadToggle) {
@@ -832,9 +929,18 @@ struct ComposeView: View {
     @State private var to = ""
     @State private var subject = ""
     @State private var messageBody = ""
+    @State private var cc = ""
+    @State private var bcc = ""
+    @State private var showCcBcc = false
+    @State private var showDraftAlert = false
 
     let isSending: Bool
-    let onSend: (String, String, String) -> Void
+    let onSend: (String, String, String, String, String) -> Void
+    var onSaveDraft: ((String, String, String, String, String) -> Void)?
+
+    private var hasContent: Bool {
+        !to.isEmpty || !subject.isEmpty || !messageBody.isEmpty || !cc.isEmpty || !bcc.isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -843,6 +949,28 @@ struct ComposeView: View {
                     TextField("email@example.com", text: $to)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
+                }
+
+                if showCcBcc {
+                    Section(header: Text("CC")) {
+                        TextField("CC recipients", text: $cc)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                    }
+
+                    Section(header: Text("BCC")) {
+                        TextField("BCC recipients", text: $bcc)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                    }
+                } else {
+                    Section {
+                        Button("Show CC/BCC") {
+                            withAnimation { showCcBcc = true }
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    }
                 }
 
                 Section(header: Text("Subject")) {
@@ -857,17 +985,33 @@ struct ComposeView: View {
             .navigationTitle("New Email")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if hasContent && onSaveDraft != nil {
+                            showDraftAlert = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSending ? "Sending..." : "Send") {
-                        onSend(to, subject, messageBody)
+                        onSend(to, subject, messageBody, cc, bcc)
                         if !isSending {
                             dismiss()
                         }
                     }
                     .disabled(isSending || to.isEmpty || subject.isEmpty || messageBody.isEmpty)
                 }
+            }
+            .alert("Save as draft?", isPresented: $showDraftAlert) {
+                Button("Save") {
+                    onSaveDraft?(to, subject, messageBody, cc, bcc)
+                    dismiss()
+                }
+                Button("Discard", role: .destructive) {
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
             }
         }
     }
@@ -878,11 +1022,14 @@ struct ReplyComposeView: View {
     @State private var to: String
     @State private var subject: String
     @State private var messageBody = ""
+    @State private var cc = ""
+    @State private var bcc = ""
+    @State private var showCcBcc = false
 
     let isSending: Bool
-    let onSend: (String, String, String) -> Void
+    let onSend: (String, String, String, String, String) -> Void
 
-    init(to: String, subject: String, isSending: Bool, onSend: @escaping (String, String, String) -> Void) {
+    init(to: String, subject: String, isSending: Bool, onSend: @escaping (String, String, String, String, String) -> Void) {
         self._to = State(initialValue: to)
         self._subject = State(initialValue: subject)
         self.isSending = isSending
@@ -896,6 +1043,28 @@ struct ReplyComposeView: View {
                     TextField("email@example.com", text: $to)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
+                }
+
+                if showCcBcc {
+                    Section(header: Text("CC")) {
+                        TextField("CC recipients", text: $cc)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                    }
+
+                    Section(header: Text("BCC")) {
+                        TextField("BCC recipients", text: $bcc)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                    }
+                } else {
+                    Section {
+                        Button("Show CC/BCC") {
+                            withAnimation { showCcBcc = true }
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    }
                 }
 
                 Section(header: Text("Subject")) {
@@ -914,7 +1083,7 @@ struct ReplyComposeView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSending ? "Sending..." : "Send") {
-                        onSend(to, subject, messageBody)
+                        onSend(to, subject, messageBody, cc, bcc)
                         if !isSending {
                             dismiss()
                         }

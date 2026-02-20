@@ -46,8 +46,50 @@ struct Sender: Identifiable {
     let initials: String
 }
 
+struct EmailAttachment: Identifiable {
+    let id = UUID()
+    let filename: String
+    let mimeType: String
+    let size: Int
+    let attachmentId: String
+    let messageId: String
+
+    var fileExtension: String {
+        let components = filename.split(separator: ".")
+        return components.count > 1 ? String(components.last!) : ""
+    }
+
+    var iconName: String {
+        let ext = fileExtension.lowercased()
+        switch ext {
+        case "pdf": return "doc.richtext"
+        case "jpg", "jpeg", "png", "gif", "heic", "webp": return "photo"
+        case "doc", "docx": return "doc.text"
+        case "xls", "xlsx": return "tablecells"
+        case "ppt", "pptx": return "rectangle.on.rectangle"
+        case "zip", "tar", "gz", "rar": return "doc.zipper"
+        case "mp3", "wav", "m4a", "aac": return "music.note"
+        case "mp4", "mov", "avi": return "film"
+        case "txt": return "doc.plaintext"
+        case "csv": return "tablecells"
+        default: return "doc"
+        }
+    }
+
+    var formattedSize: String {
+        if size < 1024 {
+            return "\(size) B"
+        } else if size < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(size) / 1024.0)
+        } else {
+            return String(format: "%.1f MB", Double(size) / (1024.0 * 1024.0))
+        }
+    }
+}
+
 struct EmailMessage: Identifiable {
     let id = UUID()
+    let messageId: String?
     let sender: Sender
     let subject: String
     let pages: [String]
@@ -55,6 +97,7 @@ struct EmailMessage: Identifiable {
     let timestamp: String
     let isRoot: Bool
     let depth: Int
+    let attachments: [EmailAttachment]
 }
 
 struct EmailThread: Identifiable {
@@ -65,10 +108,43 @@ struct EmailThread: Identifiable {
     let pages: [String]
     let htmlBody: String?
     let isUnread: Bool
+    let isStarred: Bool
     let messageCount: Int
     let timestamp: String
     let messages: [EmailMessage]
+    let labelIds: [String]
+    let attachments: [EmailAttachment]
     let debugVisibility: String?
+
+    init(
+        threadID: String? = nil,
+        sender: Sender,
+        subject: String,
+        pages: [String],
+        htmlBody: String? = nil,
+        isUnread: Bool = false,
+        isStarred: Bool = false,
+        messageCount: Int = 0,
+        timestamp: String = "",
+        messages: [EmailMessage] = [],
+        labelIds: [String] = [],
+        attachments: [EmailAttachment] = [],
+        debugVisibility: String? = nil
+    ) {
+        self.threadID = threadID
+        self.sender = sender
+        self.subject = subject
+        self.pages = pages
+        self.htmlBody = htmlBody
+        self.isUnread = isUnread
+        self.isStarred = isStarred
+        self.messageCount = messageCount
+        self.timestamp = timestamp
+        self.messages = messages
+        self.labelIds = labelIds
+        self.attachments = attachments
+        self.debugVisibility = debugVisibility
+    }
 }
 
 enum TextChunker {
@@ -145,50 +221,60 @@ enum SampleData {
 
             if isNestedScenario {
                 messages.append(EmailMessage(
+                    messageId: nil,
                     sender: sender,
                     subject: subject,
                     pages: TextChunker.chunk(body),
                     htmlBody: nil,
                     timestamp: "10:30 AM",
                     isRoot: true,
-                    depth: 0
+                    depth: 0,
+                    attachments: []
                 ))
                 messages.append(EmailMessage(
+                    messageId: nil,
                     sender: senders[(index + 1) % senders.count],
                     subject: "RE: \(subject)",
                     pages: TextChunker.chunk("That's great news! Do we have a fallback plan if the integration testing reveals issues?"),
                     htmlBody: nil,
                     timestamp: "10:45 AM",
                     isRoot: false,
-                    depth: 0
+                    depth: 0,
+                    attachments: []
                 ))
                 messages.append(EmailMessage(
+                    messageId: nil,
                     sender: sender,
                     subject: "RE: \(subject)",
                     pages: TextChunker.chunk("Yes, we have a rollback script ready. If we see >1% error rate, we revert immediately."),
                     htmlBody: nil,
                     timestamp: "10:52 AM",
                     isRoot: false,
-                    depth: 1
+                    depth: 1,
+                    attachments: []
                 ))
             } else if isThread {
                 messages.append(EmailMessage(
+                    messageId: nil,
                     sender: sender,
                     subject: subject,
                     pages: TextChunker.chunk(body),
                     htmlBody: nil,
                     timestamp: "10:30 AM",
                     isRoot: true,
-                    depth: 0
+                    depth: 0,
+                    attachments: []
                 ))
                 messages.append(EmailMessage(
+                    messageId: nil,
                     sender: senders[(index + 1) % senders.count],
                     subject: "RE: \(subject)",
                     pages: TextChunker.chunk("Looks good to me."),
                     htmlBody: nil,
                     timestamp: "11:00 AM",
                     isRoot: false,
-                    depth: 0
+                    depth: 0,
+                    attachments: []
                 ))
             }
 
@@ -199,6 +285,7 @@ enum SampleData {
                 pages: TextChunker.chunk(body),
                 htmlBody: nil,
                 isUnread: index % 2 == 0,
+                isStarred: index % 4 == 0,
                 messageCount: messageCount,
                 timestamp: isNestedScenario ? "Now" : "2h",
                 messages: messages,

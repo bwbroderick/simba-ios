@@ -16,6 +16,9 @@ struct InboxView: View {
     @State private var showFirewall = false
     @State private var showSideDrawer = false
     @State private var scrollToTopTrigger = false
+    @State private var attachmentToPreview: EmailAttachment?
+    @State private var attachmentData: Data?
+    @State private var isDownloadingAttachment = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -24,7 +27,7 @@ struct InboxView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             HeaderView(
-                            title: "Inbox",
+                            title: gmailViewModel.currentLabel.displayName,
                             showsBack: false,
                             onBack: nil,
                             onMeTap: { showSideDrawer = true }
@@ -38,7 +41,7 @@ struct InboxView: View {
                         }
 
                         if gmailViewModel.isLoading {
-                            ProgressView("Loading Gmail…")
+                            ProgressView("Loading…")
                                 .padding(.vertical, 16)
                         }
 
@@ -80,13 +83,36 @@ struct InboxView: View {
                                     if thread.isUnread, let threadID = thread.threadID {
                                         gmailViewModel.queueMarkRead(threadID: threadID)
                                     }
+                                },
+                                onStar: {
+                                    if let threadID = thread.threadID {
+                                        Task { await gmailViewModel.toggleStar(threadID: threadID, isCurrentlyStarred: thread.isStarred) }
+                                    }
+                                },
+                                onArchive: {
+                                    if let threadID = thread.threadID {
+                                        Task { await gmailViewModel.archiveThread(threadID: threadID) }
+                                    }
+                                },
+                                onAttachmentTap: { attachment in
+                                    attachmentToPreview = attachment
+                                    downloadAndPreviewAttachment(attachment)
                                 }
                             )
                         }
 
+                        // Pagination sentinel
+                        if gmailViewModel.hasMorePages {
+                            ProgressView()
+                                .padding(.vertical, 16)
+                                .onAppear {
+                                    Task { await gmailViewModel.loadMoreThreads() }
+                                }
+                        }
+
                         if gmailViewModel.isSignedIn, !gmailViewModel.isLoading, activeThreads.isEmpty {
                             EmptyStateView(
-                                title: showUnreadOnly ? "No unread email" : "Inbox empty",
+                                title: showUnreadOnly ? "No unread email" : "\(gmailViewModel.currentLabel.displayName) empty",
                                 message: showUnreadOnly
                                     ? "You're all caught up."
                                     : "Pull to refresh or wait for new mail."
@@ -156,7 +182,8 @@ struct InboxView: View {
                             },
                             onShieldTap: {
                                 showFirewall = true
-                            }
+                            },
+                            labelName: gmailViewModel.currentLabel.displayName
                         )
                     }
                 }
@@ -192,6 +219,11 @@ struct InboxView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             showFeedback = true
                         }
+                    },
+                    labels: gmailViewModel.labels,
+                    currentLabel: gmailViewModel.currentLabel,
+                    onLabelTap: { label in
+                        Task { await gmailViewModel.switchLabel(label) }
                     }
                 )
                 .frame(width: 280)
@@ -218,8 +250,11 @@ struct InboxView: View {
             .sheet(isPresented: $showCompose) {
                 ComposeView(
                     isSending: gmailViewModel.isSending,
-                    onSend: { to, subject, body in
-                        Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body) }
+                    onSend: { to, subject, body, cc, bcc in
+                        Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body, cc: cc, bcc: bcc) }
+                    },
+                    onSaveDraft: { to, subject, body, cc, bcc in
+                        Task { _ = await gmailViewModel.createDraft(to: to, subject: subject, body: body, cc: cc, bcc: bcc) }
                     }
                 )
             }
@@ -281,6 +316,109 @@ struct InboxView: View {
                 )
                 .environmentObject(gmailViewModel)
             }
+            .sheet(item: $attachmentToPreview) { attachment in
+                AttachmentPreviewSheet(
+                    attachment: attachment,
+                    data: attachmentData,
+                    isDownloading: isDownloadingAttachment
+                )
+            }
+        }
+    }
+
+    private func downloadAndPreviewAttachment(_ attachment: EmailAttachment) {
+        isDownloadingAttachment = true
+        attachmentData = nil
+        Task {
+            let data = await gmailViewModel.downloadAttachment(
+                messageId: attachment.messageId,
+                attachmentId: attachment.attachmentId
+            )
+            attachmentData = data
+            isDownloadingAttachment = false
+        }
+    }
+}
+
+struct AttachmentPreviewSheet: View {
+    let attachment: EmailAttachment
+    let data: Data?
+    let isDownloading: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                if isDownloading {
+                    Spacer()
+                    ProgressView("Downloading…")
+                    Spacer()
+                } else if let data {
+                    if attachment.mimeType.hasPrefix("image/"), let image = UIImage(data: data) {
+                        ScrollView {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .padding()
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            Spacer()
+                            Image(systemName: attachment.iconName)
+                                .font(.system(size: 48))
+                                .foregroundColor(.gray)
+                            Text(attachment.filename)
+                                .font(.headline)
+                            Text(attachment.formattedSize)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+
+                            ShareLink(item: AttachmentDataItem(data: data, filename: attachment.filename)) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "square.and.arrow.up")
+                                    Text("Share")
+                                }
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.vertical, 12)
+                                .padding(.horizontal, 24)
+                                .background(Color.black)
+                                .cornerRadius(20)
+                            }
+                            Spacer()
+                        }
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        Spacer()
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 36))
+                            .foregroundColor(.gray)
+                        Text("Failed to download")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                        Spacer()
+                    }
+                }
+            }
+            .navigationTitle(attachment.filename)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+struct AttachmentDataItem: Transferable {
+    let data: Data
+    let filename: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .data) { item in
+            item.data
         }
     }
 }
