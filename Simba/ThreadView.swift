@@ -40,10 +40,11 @@ struct ThreadView: View {
                             pages: message.pages,
                             htmlBody: message.htmlBody,
                             isUnread: false,
+                            isStarred: thread.isStarred,
                             messageCount: 0,
                             timestamp: message.timestamp,
                             messages: [],
-                            debugVisibility: nil
+                            attachments: message.attachments
                         )
                         EmailCardView(
                             thread: messageThread,

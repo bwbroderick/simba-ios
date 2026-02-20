@@ -11,6 +11,9 @@ struct EmailDetailView: View {
     var onForward: (() -> Void)?
 
     @State private var showReplyCompose = false
+    @State private var attachmentToPreview: EmailAttachment?
+    @State private var attachmentData: Data?
+    @State private var isDownloadingAttachment = false
 
     var body: some View {
         NavigationStack {
@@ -47,6 +50,18 @@ struct EmailDetailView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundColor(.gray.opacity(0.7))
                         .tracking(0.8)
+
+                    // Star button
+                    Button(action: {
+                        if let threadID = thread.threadID {
+                            Task { await gmailViewModel.toggleStar(threadID: threadID, isCurrentlyStarred: thread.isStarred) }
+                        }
+                    }) {
+                        Image(systemName: thread.isStarred ? "star.fill" : "star")
+                            .font(.body)
+                            .foregroundColor(thread.isStarred ? .orange : .gray.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -69,6 +84,41 @@ struct EmailDetailView: View {
                         .frame(height: 1),
                     alignment: .bottom
                 )
+
+                // Attachments bar
+                if !thread.attachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(thread.attachments) { attachment in
+                                Button(action: {
+                                    attachmentToPreview = attachment
+                                    downloadAndPreview(attachment)
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: attachment.iconName)
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundColor(.gray)
+                                        Text(attachment.filename)
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundColor(.black.opacity(0.8))
+                                            .lineLimit(1)
+                                        Text(attachment.formattedSize)
+                                            .font(.caption2)
+                                            .foregroundColor(.gray.opacity(0.7))
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color(white: 0.95))
+                                    .cornerRadius(12)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+                    .background(Color(white: 0.98))
+                }
 
                 // HTML Content
                 if let html = thread.htmlBody, !html.isEmpty {
@@ -102,6 +152,14 @@ struct EmailDetailView: View {
                             }
                         } else {
                             showReplyCompose = true
+                        }
+                    },
+                    onArchive: {
+                        if let threadID = thread.threadID {
+                            Task {
+                                await gmailViewModel.archiveThread(threadID: threadID)
+                                dismiss()
+                            }
                         }
                     },
                     onForward: {
@@ -138,10 +196,30 @@ struct EmailDetailView: View {
                 to: thread.sender.email ?? "",
                 subject: thread.subject.hasPrefix("Re:") ? thread.subject : "Re: \(thread.subject)",
                 isSending: gmailViewModel.isSending,
-                onSend: { to, subject, body in
-                    Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body) }
+                onSend: { to, subject, body, cc, bcc in
+                    Task { await gmailViewModel.sendEmail(to: to, subject: subject, body: body, cc: cc, bcc: bcc) }
                 }
             )
+        }
+        .sheet(item: $attachmentToPreview) { attachment in
+            AttachmentPreviewSheet(
+                attachment: attachment,
+                data: attachmentData,
+                isDownloading: isDownloadingAttachment
+            )
+        }
+    }
+
+    private func downloadAndPreview(_ attachment: EmailAttachment) {
+        isDownloadingAttachment = true
+        attachmentData = nil
+        Task {
+            let data = await gmailViewModel.downloadAttachment(
+                messageId: attachment.messageId,
+                attachmentId: attachment.attachmentId
+            )
+            attachmentData = data
+            isDownloadingAttachment = false
         }
     }
 }
@@ -150,6 +228,7 @@ private struct ActionBar: View {
     let hasThread: Bool
     let messageCount: Int
     let onReply: () -> Void
+    let onArchive: () -> Void
     let onForward: () -> Void
     let onDelete: () -> Void
     let onThread: () -> Void
@@ -161,6 +240,17 @@ private struct ActionBar: View {
                     Image(systemName: "arrowshape.turn.up.left")
                         .font(.title3.weight(.medium))
                     Text("Reply")
+                        .font(.caption2)
+                }
+                .foregroundColor(.gray)
+                .frame(maxWidth: .infinity)
+            }
+
+            Button(action: onArchive) {
+                VStack(spacing: 4) {
+                    Image(systemName: "archivebox")
+                        .font(.title3.weight(.medium))
+                    Text("Archive")
                         .font(.caption2)
                 }
                 .foregroundColor(.gray)

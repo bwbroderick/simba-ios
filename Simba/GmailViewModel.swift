@@ -2,6 +2,54 @@ import Foundation
 import GoogleSignIn
 import UIKit
 
+struct GmailLabel: Identifiable {
+    let id: String
+    let name: String
+    let type: String // "system" or "user"
+
+    var displayName: String {
+        switch id {
+        case "INBOX": return "Inbox"
+        case "SENT": return "Sent"
+        case "DRAFT": return "Drafts"
+        case "TRASH": return "Trash"
+        case "SPAM": return "Spam"
+        case "STARRED": return "Starred"
+        case "IMPORTANT": return "Important"
+        case "UNREAD": return "Unread"
+        default: return name
+        }
+    }
+
+    var iconName: String {
+        switch id {
+        case "INBOX": return "tray"
+        case "SENT": return "paperplane"
+        case "DRAFT": return "doc.text"
+        case "TRASH": return "trash"
+        case "SPAM": return "exclamationmark.shield"
+        case "STARRED": return "star"
+        case "IMPORTANT": return "bookmark"
+        default: return "tag"
+        }
+    }
+
+    static let defaultLabels: [GmailLabel] = [
+        GmailLabel(id: "INBOX", name: "Inbox", type: "system"),
+        GmailLabel(id: "STARRED", name: "Starred", type: "system"),
+        GmailLabel(id: "SENT", name: "Sent", type: "system"),
+        GmailLabel(id: "DRAFT", name: "Drafts", type: "system"),
+        GmailLabel(id: "SPAM", name: "Spam", type: "system"),
+        GmailLabel(id: "TRASH", name: "Trash", type: "system"),
+    ]
+}
+
+struct GmailDraft: Identifiable {
+    let id: String
+    let messageId: String?
+    let thread: EmailThread?
+}
+
 @MainActor
 final class GmailViewModel: ObservableObject {
     @Published var threads: [EmailThread] = []
@@ -12,12 +60,27 @@ final class GmailViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isSending = false
 
+    // Labels
+    @Published var labels: [GmailLabel] = GmailLabel.defaultLabels
+    @Published var currentLabel: GmailLabel = GmailLabel.defaultLabels[0]
+    @Published var userLabels: [GmailLabel] = []
+
+    // Pagination
+    @Published var isLoadingMore = false
+    @Published var hasMorePages = false
+
+    // Drafts
+    @Published var drafts: [GmailDraft] = []
+
     private let clientID = "350262483118-bcrf17c6jrkfrum041she8njri3ju6m1.apps.googleusercontent.com"
     private let readOnlyScope = "https://www.googleapis.com/auth/gmail.readonly"
     private let sendScope = "https://www.googleapis.com/auth/gmail.send"
     private let modifyScope = "https://www.googleapis.com/auth/gmail.modify"
     private let cacheURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("gmail-cache.json")
+
+    private var nextPageToken: String?
+    private var searchNextPageToken: String?
 
     init() {
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
@@ -35,7 +98,10 @@ final class GmailViewModel: ObservableObject {
 
             self.isSignedIn = (user != nil)
             if self.isSignedIn {
-                Task { await self.fetchInbox() }
+                Task {
+                    await self.fetchLabels()
+                    await self.fetchInbox()
+                }
             }
         }
     }
@@ -62,7 +128,10 @@ final class GmailViewModel: ObservableObject {
             }
 
             self.isSignedIn = (result?.user != nil)
-            Task { await self.fetchInbox() }
+            Task {
+                await self.fetchLabels()
+                await self.fetchInbox()
+            }
         }
     }
 
@@ -70,14 +139,53 @@ final class GmailViewModel: ObservableObject {
         GIDSignIn.sharedInstance.signOut()
         isSignedIn = false
         threads = []
+        drafts = []
+        currentLabel = GmailLabel.defaultLabels[0]
     }
 
+    // MARK: - Labels
+
+    func fetchLabels() async {
+        guard let token = await refreshedAccessToken() else { return }
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/labels")!
+            var request = URLRequest(url: url)
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return
+            }
+
+            let labelsResponse = try JSONDecoder().decode(GmailLabelsResponse.self, from: data)
+            let fetchedLabels = labelsResponse.labels ?? []
+
+            userLabels = fetchedLabels
+                .filter { $0.type == "user" }
+                .map { GmailLabel(id: $0.id, name: $0.name, type: "user") }
+                .sorted { $0.name.lowercased() < $1.name.lowercased() }
+
+            labels = GmailLabel.defaultLabels + userLabels
+        } catch {
+            // Non-critical, keep defaults
+        }
+    }
+
+    func switchLabel(_ label: GmailLabel) async {
+        currentLabel = label
+        threads = []
+        nextPageToken = nil
+        hasMorePages = false
+        await fetchInbox()
+    }
+
+    // MARK: - Fetch Inbox
+
     func fetchInbox(unreadOnly: Bool = false) async {
-        // Generate a unique ID for this fetch to detect stale results
         let fetchID = UUID()
         currentFetchID = fetchID
 
-        // Refresh access token before making API calls
         guard let token = await refreshedAccessToken() else {
             errorMessage = "Missing or expired access token."
             return
@@ -86,72 +194,162 @@ final class GmailViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         unreadOnlyActive = unreadOnly
+        nextPageToken = nil
 
         do {
-            var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
-            var queryItems = [
-                URLQueryItem(name: "maxResults", value: "20"),
-                URLQueryItem(name: "labelIds", value: "INBOX")
-            ]
-            if unreadOnly {
-                queryItems.append(URLQueryItem(name: "q", value: "is:unread"))
-            }
-            listComponents.queryItems = queryItems
-            let listURL = listComponents.url!
-            var listRequest = URLRequest(url: listURL)
-            listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (threadIDs, pageToken) = try await fetchThreadIDs(
+                token: token,
+                labelId: currentLabel.id,
+                unreadOnly: unreadOnly,
+                pageToken: nil
+            )
 
-            let (listData, listURLResponse) = try await URLSession.shared.data(for: listRequest)
-            if let httpResponse = listURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                throw NSError(domain: "GmailAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch inbox (HTTP \(httpResponse.statusCode))"])
-            }
-            let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
+            nextPageToken = pageToken
+            hasMorePages = pageToken != nil
 
-            let threadIDs = (listResponse.threads ?? []).map { $0.id }
-            var loadedThreads: [EmailThread] = []
+            let loadedThreads = await loadThreadDetails(threadIDs: threadIDs, token: token)
 
-            for threadID in threadIDs {
-                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)?format=full")!
-                var detailRequest = URLRequest(url: detailURL)
-                detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-                let (detailData, detailURLResponse) = try await URLSession.shared.data(for: detailRequest)
-                if let httpResponse = detailURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    continue // Skip threads that fail to load
-                }
-                let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
-
-                if let thread = Self.makeThread(from: threadDetail) {
-                    loadedThreads.append(thread)
-                }
-            }
-
-            // Only update if this is still the most recent fetch (prevents race conditions)
             guard fetchID == currentFetchID else { return }
 
             threads = loadedThreads
-            // Only save to cache when showing all emails, not filtered unread-only view
-            if !unreadOnly {
+            if !unreadOnly && currentLabel.id == "INBOX" {
                 saveCachedThreads(loadedThreads)
             }
 
             ContactStore.shared.extract(from: loadedThreads)
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch is CancellationError {
-            // Task was cancelled (e.g., view dismissed) - not an error to display
             return
         } catch {
-            // Only show error if this is still the most recent fetch
             if fetchID == currentFetchID {
                 errorMessage = error.localizedDescription
             }
         }
 
-        // Only update loading state if this is still the most recent fetch
         if fetchID == currentFetchID {
             isLoading = false
         }
     }
+
+    func loadMoreThreads() async {
+        guard let pageToken = nextPageToken, !isLoadingMore else { return }
+
+        guard let token = await refreshedAccessToken() else { return }
+
+        isLoadingMore = true
+
+        do {
+            let (threadIDs, newPageToken) = try await fetchThreadIDs(
+                token: token,
+                labelId: currentLabel.id,
+                unreadOnly: unreadOnlyActive,
+                pageToken: pageToken
+            )
+
+            nextPageToken = newPageToken
+            hasMorePages = newPageToken != nil
+
+            let newThreads = await loadThreadDetails(threadIDs: threadIDs, token: token)
+
+            // Deduplicate
+            let existingIDs = Set(threads.compactMap { $0.threadID })
+            let unique = newThreads.filter { thread in
+                guard let tid = thread.threadID else { return true }
+                return !existingIDs.contains(tid)
+            }
+
+            threads.append(contentsOf: unique)
+        } catch {
+            // Silent failure for pagination
+        }
+
+        isLoadingMore = false
+    }
+
+    private func fetchThreadIDs(
+        token: String,
+        labelId: String,
+        unreadOnly: Bool,
+        pageToken: String?
+    ) async throws -> ([String], String?) {
+        var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
+        var queryItems = [
+            URLQueryItem(name: "maxResults", value: "20"),
+        ]
+
+        // STARRED and DRAFT don't use labelIds the same way
+        if labelId == "STARRED" {
+            queryItems.append(URLQueryItem(name: "q", value: "is:starred"))
+        } else if labelId == "DRAFT" {
+            // Drafts are fetched separately
+        } else {
+            queryItems.append(URLQueryItem(name: "labelIds", value: labelId))
+        }
+
+        if unreadOnly {
+            queryItems.append(URLQueryItem(name: "q", value: "is:unread"))
+        }
+        if let pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+
+        listComponents.queryItems = queryItems
+        let listURL = listComponents.url!
+        var listRequest = URLRequest(url: listURL)
+        listRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (listData, listURLResponse) = try await URLSession.shared.data(for: listRequest)
+        if let httpResponse = listURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+            throw NSError(domain: "GmailAPI", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch threads (HTTP \(httpResponse.statusCode))"])
+        }
+        let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
+
+        let threadIDs = (listResponse.threads ?? []).map { $0.id }
+        return (threadIDs, listResponse.nextPageToken)
+    }
+
+    private func loadThreadDetails(threadIDs: [String], token: String) async -> [EmailThread] {
+        var loadedThreads: [EmailThread] = []
+
+        await withTaskGroup(of: (Int, EmailThread?).self) { group in
+            for (index, threadID) in threadIDs.enumerated() {
+                group.addTask {
+                    let thread = await self.fetchSingleThread(threadID: threadID, token: token)
+                    return (index, thread)
+                }
+            }
+
+            var results: [(Int, EmailThread)] = []
+            for await (index, thread) in group {
+                if let thread {
+                    results.append((index, thread))
+                }
+            }
+
+            loadedThreads = results.sorted { $0.0 < $1.0 }.map { $0.1 }
+        }
+
+        return loadedThreads
+    }
+
+    private func fetchSingleThread(threadID: String, token: String) async -> EmailThread? {
+        do {
+            let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)?format=full")!
+            var detailRequest = URLRequest(url: detailURL)
+            detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (detailData, detailURLResponse) = try await URLSession.shared.data(for: detailRequest)
+            if let httpResponse = detailURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return nil
+            }
+            let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
+            return Self.makeThread(from: threadDetail)
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Mark Read
 
     func queueMarkRead(threadID: String) {
         pendingReadThreadIDs.insert(threadID)
@@ -187,7 +385,6 @@ final class GmailViewModel: ObservableObject {
 
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                errorMessage = "Failed to delete: HTTP \(httpResponse.statusCode)"
                 return
             }
         } catch {
@@ -195,7 +392,6 @@ final class GmailViewModel: ObservableObject {
         }
 
         if unreadOnlyActive {
-            // Remove from display list but don't save to cache - this is a filtered view
             threads.removeAll { $0.threadID == threadID }
         } else {
             threads = threads.map { thread in
@@ -207,18 +403,24 @@ final class GmailViewModel: ObservableObject {
                         pages: thread.pages,
                         htmlBody: thread.htmlBody,
                         isUnread: false,
+                        isStarred: thread.isStarred,
                         messageCount: thread.messageCount,
                         timestamp: thread.timestamp,
                         messages: thread.messages,
+                        labelIds: thread.labelIds,
+                        attachments: thread.attachments,
                         debugVisibility: thread.debugVisibility
                     )
                 }
                 return thread
             }
-            // Only save to cache when in "all emails" view to preserve full inbox state
-            saveCachedThreads(threads)
+            if currentLabel.id == "INBOX" {
+                saveCachedThreads(threads)
+            }
         }
     }
+
+    // MARK: - Trash
 
     func trashThread(threadID: String) async {
         guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
@@ -234,15 +436,98 @@ final class GmailViewModel: ObservableObject {
 
             _ = try await URLSession.shared.data(for: request)
 
-            // Remove from local state and cache
             threads.removeAll { $0.threadID == threadID }
-            saveCachedThreads(threads)
+            if currentLabel.id == "INBOX" {
+                saveCachedThreads(threads)
+            }
         } catch {
             errorMessage = "Failed to delete: \(error.localizedDescription)"
         }
     }
 
-    func sendEmail(to: String, subject: String, body: String) async {
+    // MARK: - Archive
+
+    func archiveThread(threadID: String) async {
+        guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
+            errorMessage = "Missing access token."
+            return
+        }
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)/modify")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["removeLabelIds": ["INBOX"]], options: [])
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                errorMessage = "Failed to archive: HTTP \(httpResponse.statusCode)"
+                return
+            }
+
+            threads.removeAll { $0.threadID == threadID }
+            if currentLabel.id == "INBOX" {
+                saveCachedThreads(threads)
+            }
+        } catch {
+            errorMessage = "Failed to archive: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Star/Unstar
+
+    func toggleStar(threadID: String, isCurrentlyStarred: Bool) async {
+        guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
+            return
+        }
+
+        let body: [String: [String]] = isCurrentlyStarred
+            ? ["removeLabelIds": ["STARRED"]]
+            : ["addLabelIds": ["STARRED"]]
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)/modify")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return
+            }
+
+            threads = threads.map { thread in
+                if thread.threadID == threadID {
+                    return EmailThread(
+                        threadID: thread.threadID,
+                        sender: thread.sender,
+                        subject: thread.subject,
+                        pages: thread.pages,
+                        htmlBody: thread.htmlBody,
+                        isUnread: thread.isUnread,
+                        isStarred: !isCurrentlyStarred,
+                        messageCount: thread.messageCount,
+                        timestamp: thread.timestamp,
+                        messages: thread.messages,
+                        labelIds: thread.labelIds,
+                        attachments: thread.attachments,
+                        debugVisibility: thread.debugVisibility
+                    )
+                }
+                return thread
+            }
+        } catch {
+            // Silent failure
+        }
+    }
+
+    // MARK: - Send Email
+
+    func sendEmail(to: String, subject: String, body: String, cc: String = "", bcc: String = "") async {
         guard let token = GIDSignIn.sharedInstance.currentUser?.accessToken.tokenString else {
             errorMessage = "Missing access token."
             return
@@ -251,13 +536,19 @@ final class GmailViewModel: ObservableObject {
         isSending = true
         errorMessage = nil
 
-        let rawMessage = [
+        var headers = [
             "To: \(to)",
             "Subject: \(subject)",
-            "Content-Type: text/plain; charset=\"UTF-8\"",
-            "",
-            body
-        ].joined(separator: "\r\n")
+            "Content-Type: text/plain; charset=\"UTF-8\""
+        ]
+        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Cc: \(cc)", at: 1)
+        }
+        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
+        }
+
+        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
 
         guard let data = rawMessage.data(using: .utf8) else {
             errorMessage = "Failed to encode message."
@@ -286,13 +577,203 @@ final class GmailViewModel: ObservableObject {
         isSending = false
     }
 
+    // MARK: - Attachments
+
+    func downloadAttachment(messageId: String, attachmentId: String) async -> Data? {
+        guard let token = await refreshedAccessToken() else { return nil }
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/messages/\(messageId)/attachments/\(attachmentId)")!
+            var request = URLRequest(url: url)
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return nil
+            }
+
+            let attachmentResponse = try JSONDecoder().decode(GmailAttachmentResponse.self, from: data)
+            guard let base64Data = attachmentResponse.data else { return nil }
+
+            return Self.decodeBase64URLData(base64Data)
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Drafts
+
+    func fetchDrafts() async {
+        guard let token = await refreshedAccessToken() else { return }
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/drafts?maxResults=20")!
+            var request = URLRequest(url: url)
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return
+            }
+
+            let draftsResponse = try JSONDecoder().decode(GmailDraftsListResponse.self, from: data)
+            let draftRefs = draftsResponse.drafts ?? []
+
+            var loadedDrafts: [GmailDraft] = []
+            for draftRef in draftRefs {
+                let draft = await fetchDraftDetail(draftId: draftRef.id, token: token)
+                if let draft {
+                    loadedDrafts.append(draft)
+                }
+            }
+
+            drafts = loadedDrafts
+        } catch {
+            // Silent failure
+        }
+    }
+
+    private func fetchDraftDetail(draftId: String, token: String) async -> GmailDraft? {
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/drafts/\(draftId)")!
+            var request = URLRequest(url: url)
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                return nil
+            }
+
+            let draftDetail = try JSONDecoder().decode(GmailDraftDetail.self, from: data)
+            let message = draftDetail.message
+
+            let headers = message.payload?.headers ?? []
+            let subject = headers.first(where: { $0.name.lowercased() == "subject" })?.value ?? "(No subject)"
+            let toValue = headers.first(where: { $0.name.lowercased() == "to" })?.value ?? ""
+            let body = Self.extractBodies(from: message.payload)
+            let snippet = message.snippet ?? ""
+
+            let thread = EmailThread(
+                threadID: message.threadId,
+                sender: Sender(name: toValue, email: toValue, initials: "DR"),
+                subject: subject,
+                pages: [snippet],
+                htmlBody: body.html,
+                messageCount: 0,
+                timestamp: "",
+                labelIds: ["DRAFT"]
+            )
+
+            return GmailDraft(id: draftId, messageId: message.id, thread: thread)
+        } catch {
+            return nil
+        }
+    }
+
+    func createDraft(to: String, subject: String, body: String, cc: String = "", bcc: String = "") async -> String? {
+        guard let token = await refreshedAccessToken() else { return nil }
+
+        var headers = [
+            "To: \(to)",
+            "Subject: \(subject)",
+            "Content-Type: text/plain; charset=\"UTF-8\""
+        ]
+        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Cc: \(cc)", at: 1)
+        }
+        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
+        }
+
+        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
+        guard let data = rawMessage.data(using: .utf8) else { return nil }
+
+        var encoded = data.base64EncodedString()
+        encoded = encoded.replacingOccurrences(of: "+", with: "-")
+        encoded = encoded.replacingOccurrences(of: "/", with: "_")
+        encoded = encoded.replacingOccurrences(of: "=", with: "")
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/drafts")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "message": ["raw": encoded]
+            ], options: [])
+
+            let (responseData, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(GmailDraftCreateResponse.self, from: responseData)
+            return response.id
+        } catch {
+            return nil
+        }
+    }
+
+    func updateDraft(draftId: String, to: String, subject: String, body: String, cc: String = "", bcc: String = "") async {
+        guard let token = await refreshedAccessToken() else { return }
+
+        var headers = [
+            "To: \(to)",
+            "Subject: \(subject)",
+            "Content-Type: text/plain; charset=\"UTF-8\""
+        ]
+        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Cc: \(cc)", at: 1)
+        }
+        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
+        }
+
+        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
+        guard let data = rawMessage.data(using: .utf8) else { return }
+
+        var encoded = data.base64EncodedString()
+        encoded = encoded.replacingOccurrences(of: "+", with: "-")
+        encoded = encoded.replacingOccurrences(of: "/", with: "_")
+        encoded = encoded.replacingOccurrences(of: "=", with: "")
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/drafts/\(draftId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "message": ["raw": encoded]
+            ], options: [])
+
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            // Silent failure
+        }
+    }
+
+    func deleteDraft(draftId: String) async {
+        guard let token = await refreshedAccessToken() else { return }
+
+        do {
+            let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/drafts/\(draftId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            _ = try await URLSession.shared.data(for: request)
+            drafts.removeAll { $0.id == draftId }
+        } catch {
+            // Silent failure
+        }
+    }
+
+    // MARK: - Search
+
     func search(query: String) async {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             searchResults = []
             return
         }
 
-        // Refresh access token before making API calls
         guard let token = await refreshedAccessToken() else {
             errorMessage = "Missing or expired access token."
             return
@@ -319,23 +800,7 @@ final class GmailViewModel: ObservableObject {
             let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
             let threadIDs = (listResponse.threads ?? []).map { $0.id }
-            var loadedThreads: [EmailThread] = []
-
-            for threadID in threadIDs {
-                let detailURL = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)?format=full")!
-                var detailRequest = URLRequest(url: detailURL)
-                detailRequest.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-                let (detailData, detailURLResponse) = try await URLSession.shared.data(for: detailRequest)
-                if let httpResponse = detailURLResponse as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-                    continue // Skip threads that fail to load
-                }
-                let threadDetail = try JSONDecoder().decode(GmailInboxThreadDetail.self, from: detailData)
-
-                if let thread = Self.makeThread(from: threadDetail) {
-                    loadedThreads.append(thread)
-                }
-            }
+            let loadedThreads = await loadThreadDetails(threadIDs: threadIDs, token: token)
 
             searchResults = loadedThreads
         } catch is CancellationError {
@@ -351,8 +816,9 @@ final class GmailViewModel: ObservableObject {
         searchResults = []
     }
 
-    private static func makeThread(from threadDetail: GmailInboxThreadDetail) -> EmailThread? {
-        // Use the first message for display in inbox
+    // MARK: - Thread Parsing
+
+    static func makeThread(from threadDetail: GmailInboxThreadDetail) -> EmailThread? {
         guard let firstMessage = threadDetail.messages.first else { return nil }
 
         let headers = firstMessage.payload?.headers ?? []
@@ -370,7 +836,19 @@ final class GmailViewModel: ObservableObject {
         let body = extractBodies(from: firstMessage.payload)
 
         let isUnread = firstMessage.labelIds?.contains("UNREAD") ?? false
+        let isStarred = threadDetail.messages.contains { $0.labelIds?.contains("STARRED") ?? false }
         let messageCount = threadDetail.messages.count
+
+        // Collect all label IDs across all messages
+        var allLabelIds: Set<String> = []
+        for msg in threadDetail.messages {
+            if let ids = msg.labelIds {
+                allLabelIds.formUnion(ids)
+            }
+        }
+
+        // Extract attachments from the first message
+        let attachments = extractAttachments(from: firstMessage.payload, messageId: firstMessage.id ?? threadDetail.id)
 
         return EmailThread(
             threadID: threadDetail.id,
@@ -379,45 +857,47 @@ final class GmailViewModel: ObservableObject {
             pages: pages.isEmpty ? [snippet] : pages,
             htmlBody: body.html,
             isUnread: isUnread,
+            isStarred: isStarred,
             messageCount: messageCount,
             timestamp: relativeTimestamp(from: dateValue),
             messages: [],
+            labelIds: Array(allLabelIds),
+            attachments: attachments,
             debugVisibility: nil
         )
     }
 
-    private static func makeThread(from detail: GmailMessageDetail) -> EmailThread? {
-        let headers = detail.payload?.headers ?? []
-        let subject = headers.first(where: { $0.name.lowercased() == "subject" })?.value ?? "(No subject)"
-        let fromValue = headers.first(where: { $0.name.lowercased() == "from" })?.value ?? "Unknown Sender"
-        let dateValue = headers.first(where: { $0.name.lowercased() == "date" })?.value ?? ""
+    // MARK: - Attachment Extraction
 
-        let senderName = parseSenderName(from: fromValue)
-        let senderEmail = parseEmail(from: fromValue)
-        let initials = initialsFromName(senderName)
+    static func extractAttachments(from payload: GmailMessagePayload?, messageId: String) -> [EmailAttachment] {
+        guard let payload else { return [] }
+        var attachments: [EmailAttachment] = []
 
-        let sender = Sender(name: senderName, email: senderEmail, initials: initials)
-        let snippet = detail.snippet ?? ""
-        let pages = TextChunker.chunk(snippet)
-        let body = extractBodies(from: detail.payload)
+        func walk(_ part: GmailMessagePart) {
+            if let filename = part.filename, !filename.isEmpty,
+               let attachmentId = part.body?.attachmentId {
+                let size = part.body?.size ?? 0
+                attachments.append(EmailAttachment(
+                    filename: filename,
+                    mimeType: part.mimeType ?? "application/octet-stream",
+                    size: size,
+                    attachmentId: attachmentId,
+                    messageId: messageId
+                ))
+            }
+            part.parts?.forEach { walk($0) }
+        }
 
-        let isUnread = detail.labelIds?.contains("UNREAD") ?? false
+        if let parts = payload.parts {
+            parts.forEach { walk($0) }
+        }
 
-        return EmailThread(
-            threadID: detail.threadId,
-            sender: sender,
-            subject: subject,
-            pages: pages.isEmpty ? [snippet] : pages,
-            htmlBody: body.html,
-            isUnread: isUnread,
-            messageCount: 0,
-            timestamp: relativeTimestamp(from: dateValue),
-            messages: [],
-            debugVisibility: nil
-        )
+        return attachments
     }
 
-    private static func parseSenderName(from value: String) -> String {
+    // MARK: - Helpers
+
+    static func parseSenderName(from value: String) -> String {
         if let namePart = value.split(separator: "<").first {
             let trimmed = namePart.trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
@@ -437,7 +917,7 @@ final class GmailViewModel: ObservableObject {
         return value
     }
 
-    private static func parseEmail(from value: String) -> String? {
+    static func parseEmail(from value: String) -> String? {
         if let emailPart = value.split(separator: "<").last?.replacingOccurrences(of: ">", with: "") {
             return emailPart.trimmingCharacters(in: .whitespacesAndNewlines)
         }
@@ -455,14 +935,14 @@ final class GmailViewModel: ObservableObject {
             .joined(separator: " ")
     }
 
-    private static func initialsFromName(_ name: String) -> String {
+    static func initialsFromName(_ name: String) -> String {
         let parts = name.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? "?"
         let second = parts.dropFirst().first?.first.map(String.init) ?? ""
         return (first + second).uppercased()
     }
 
-    private static func relativeTimestamp(from headerValue: String) -> String {
+    static func relativeTimestamp(from headerValue: String) -> String {
         guard let date = parseDate(from: headerValue) else { return "" }
         let interval = Date().timeIntervalSince(date)
         if interval < 60 { return "Now" }
@@ -498,7 +978,7 @@ final class GmailViewModel: ObservableObject {
         return isoFormatter.date(from: cleaned)
     }
 
-    private static func extractBodies(from payload: GmailMessagePayload?) -> (html: String?, text: String?) {
+    static func extractBodies(from payload: GmailMessagePayload?) -> (html: String?, text: String?) {
         guard let payload else { return (nil, nil) }
         let parts = payload.parts ?? []
         var htmlBody: String?
@@ -531,7 +1011,7 @@ final class GmailViewModel: ObservableObject {
         return (htmlBody, textBody)
     }
 
-    private static func decodeBase64URL(_ value: String?) -> String? {
+    static func decodeBase64URL(_ value: String?) -> String? {
         guard var value else { return nil }
         value = value.replacingOccurrences(of: "-", with: "+")
         value = value.replacingOccurrences(of: "_", with: "/")
@@ -540,6 +1020,16 @@ final class GmailViewModel: ObservableObject {
         guard let data = Data(base64Encoded: value) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    static func decodeBase64URLData(_ value: String) -> Data? {
+        var v = value.replacingOccurrences(of: "-", with: "+")
+        v = v.replacingOccurrences(of: "_", with: "/")
+        let paddedLength = ((v.count + 3) / 4) * 4
+        v = v.padding(toLength: paddedLength, withPad: "=", startingAt: 0)
+        return Data(base64Encoded: v)
+    }
+
+    // MARK: - Cache
 
     private func loadCachedThreads() {
         guard let data = try? Data(contentsOf: cacheURL) else { return }
@@ -553,7 +1043,7 @@ final class GmailViewModel: ObservableObject {
         try? data.write(to: cacheURL, options: [.atomic])
     }
 
-    private func refreshedAccessToken() async -> String? {
+    func refreshedAccessToken() async -> String? {
         guard let user = GIDSignIn.sharedInstance.currentUser else { return nil }
         return await withCheckedContinuation { continuation in
             user.refreshTokensIfNeeded { user, error in
@@ -573,6 +1063,8 @@ final class GmailViewModel: ObservableObject {
     private var currentFetchID: UUID?
 }
 
+// MARK: - API Response Models
+
 struct GmailMessageListResponse: Decodable {
     let messages: [GmailMessageRef]?
 }
@@ -583,6 +1075,7 @@ struct GmailMessageRef: Decodable {
 
 struct GmailThreadListResponse: Decodable {
     let threads: [GmailThreadRef]?
+    let nextPageToken: String?
 }
 
 struct GmailThreadRef: Decodable {
@@ -595,6 +1088,7 @@ struct GmailInboxThreadDetail: Decodable {
 }
 
 struct GmailMessageDetail: Decodable {
+    let id: String?
     let snippet: String?
     let payload: GmailMessagePayload?
     let threadId: String?
@@ -615,13 +1109,48 @@ struct GmailMessageHeader: Decodable {
 
 struct GmailMessagePart: Decodable {
     let mimeType: String?
+    let filename: String?
     let body: GmailMessageBody?
     let parts: [GmailMessagePart]?
 }
 
 struct GmailMessageBody: Decodable {
     let data: String?
+    let size: Int?
+    let attachmentId: String?
 }
+
+struct GmailAttachmentResponse: Decodable {
+    let data: String?
+    let size: Int?
+}
+
+struct GmailLabelsResponse: Decodable {
+    struct Label: Decodable {
+        let id: String
+        let name: String
+        let type: String?
+    }
+    let labels: [Label]?
+}
+
+struct GmailDraftsListResponse: Decodable {
+    struct DraftRef: Decodable {
+        let id: String
+    }
+    let drafts: [DraftRef]?
+}
+
+struct GmailDraftDetail: Decodable {
+    let id: String
+    let message: GmailMessageDetail
+}
+
+struct GmailDraftCreateResponse: Decodable {
+    let id: String
+}
+
+// MARK: - Cache Model
 
 struct CachedThread: Codable {
     let threadID: String?
@@ -632,8 +1161,31 @@ struct CachedThread: Codable {
     let pages: [String]
     let htmlBody: String?
     let isUnread: Bool
+    let isStarred: Bool
     let messageCount: Int
     let timestamp: String
+    let labelIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case threadID, senderName, senderEmail, senderInitials, subject, pages, htmlBody
+        case isUnread, isStarred, messageCount, timestamp, labelIds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        threadID = try container.decodeIfPresent(String.self, forKey: .threadID)
+        senderName = try container.decode(String.self, forKey: .senderName)
+        senderEmail = try container.decodeIfPresent(String.self, forKey: .senderEmail)
+        senderInitials = try container.decode(String.self, forKey: .senderInitials)
+        subject = try container.decode(String.self, forKey: .subject)
+        pages = try container.decode([String].self, forKey: .pages)
+        htmlBody = try container.decodeIfPresent(String.self, forKey: .htmlBody)
+        isUnread = try container.decode(Bool.self, forKey: .isUnread)
+        isStarred = try container.decodeIfPresent(Bool.self, forKey: .isStarred) ?? false
+        messageCount = try container.decode(Int.self, forKey: .messageCount)
+        timestamp = try container.decode(String.self, forKey: .timestamp)
+        labelIds = try container.decodeIfPresent([String].self, forKey: .labelIds) ?? []
+    }
 
     init(from thread: EmailThread) {
         threadID = thread.threadID
@@ -644,8 +1196,10 @@ struct CachedThread: Codable {
         pages = thread.pages
         htmlBody = thread.htmlBody
         isUnread = thread.isUnread
+        isStarred = thread.isStarred
         messageCount = thread.messageCount
         timestamp = thread.timestamp
+        labelIds = thread.labelIds
     }
 
     func toModel() -> EmailThread {
@@ -656,10 +1210,10 @@ struct CachedThread: Codable {
             pages: pages,
             htmlBody: htmlBody,
             isUnread: isUnread,
+            isStarred: isStarred,
             messageCount: messageCount,
             timestamp: timestamp,
-            messages: [],
-            debugVisibility: nil
+            labelIds: labelIds
         )
     }
 }
