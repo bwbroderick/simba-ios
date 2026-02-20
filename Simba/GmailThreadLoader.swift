@@ -64,7 +64,7 @@ enum GmailMessageParser {
         let body = GmailMessageParser.extractBodies(from: detail.payload)
 
         let messageId = detail.id ?? ""
-        let attachments = GmailViewModel.extractAttachments(from: detail.payload, messageId: messageId)
+        let attachments = GmailMessageParser.extractAttachments(from: detail.payload, messageId: messageId)
 
         return EmailMessage(
             messageId: detail.id,
@@ -77,6 +77,32 @@ enum GmailMessageParser {
             depth: 0,
             attachments: attachments
         )
+    }
+
+    static func extractAttachments(from payload: GmailMessagePayload?, messageId: String) -> [EmailAttachment] {
+        guard let payload else { return [] }
+        var attachments: [EmailAttachment] = []
+
+        func walk(_ part: GmailMessagePart) {
+            if let filename = part.filename, !filename.isEmpty,
+               let attachmentId = part.body?.attachmentId {
+                let size = part.body?.size ?? 0
+                attachments.append(EmailAttachment(
+                    filename: filename,
+                    mimeType: part.mimeType ?? "application/octet-stream",
+                    size: size,
+                    attachmentId: attachmentId,
+                    messageId: messageId
+                ))
+            }
+            part.parts?.forEach { walk($0) }
+        }
+
+        if let parts = payload.parts {
+            parts.forEach { walk($0) }
+        }
+
+        return attachments
     }
 
     private static func parseSenderName(from value: String) -> String {

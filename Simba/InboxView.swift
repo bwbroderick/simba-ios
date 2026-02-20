@@ -180,10 +180,10 @@ struct InboxView: View {
                                 showUnreadOnly.toggle()
                                 Task { await gmailViewModel.fetchInbox(unreadOnly: showUnreadOnly) }
                             },
+                            labelName: gmailViewModel.currentLabel.displayName,
                             onShieldTap: {
                                 showFirewall = true
-                            },
-                            labelName: gmailViewModel.currentLabel.displayName
+                            }
                         )
                     }
                 }
@@ -373,7 +373,7 @@ struct AttachmentPreviewSheet: View {
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
 
-                            ShareLink(item: AttachmentDataItem(data: data, filename: attachment.filename)) {
+                            ShareLink(item: AttachmentDataItem(data: data, filename: attachment.filename), preview: SharePreview(attachment.filename)) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "square.and.arrow.up")
                                     Text("Share")

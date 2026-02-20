@@ -882,29 +882,7 @@ final class GmailViewModel: ObservableObject {
     // MARK: - Attachment Extraction
 
     static func extractAttachments(from payload: GmailMessagePayload?, messageId: String) -> [EmailAttachment] {
-        guard let payload else { return [] }
-        var attachments: [EmailAttachment] = []
-
-        func walk(_ part: GmailMessagePart) {
-            if let filename = part.filename, !filename.isEmpty,
-               let attachmentId = part.body?.attachmentId {
-                let size = part.body?.size ?? 0
-                attachments.append(EmailAttachment(
-                    filename: filename,
-                    mimeType: part.mimeType ?? "application/octet-stream",
-                    size: size,
-                    attachmentId: attachmentId,
-                    messageId: messageId
-                ))
-            }
-            part.parts?.forEach { walk($0) }
-        }
-
-        if let parts = payload.parts {
-            parts.forEach { walk($0) }
-        }
-
-        return attachments
+        GmailMessageParser.extractAttachments(from: payload, messageId: messageId)
     }
 
     // MARK: - Helpers

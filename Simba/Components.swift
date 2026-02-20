@@ -78,7 +78,7 @@ struct SideDrawerView: View {
     var onLabelTap: ((GmailLabel) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Settings")
                     .font(.headline.weight(.semibold))
@@ -92,70 +92,75 @@ struct SideDrawerView: View {
                         .clipShape(Circle())
                 }
             }
+            .padding(.bottom, 18)
 
             Rectangle()
                 .fill(Color(white: 0.92))
                 .frame(height: 1)
 
-            if !labels.isEmpty {
-                Text("Mailboxes")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.gray)
-                    .padding(.top, 2)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if !labels.isEmpty {
+                        Text("Mailboxes")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.gray)
+                            .padding(.top, 2)
 
-                ForEach(labels) { label in
-                    Button(action: {
-                        onLabelTap?(label)
-                        isPresented = false
-                    }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: label.iconName)
-                                .font(.body.weight(.medium))
-                                .frame(width: 22)
-                            Text(label.displayName)
-                                .font(.body.weight(currentLabel?.id == label.id ? .semibold : .regular))
+                        ForEach(labels) { label in
+                            Button(action: {
+                                onLabelTap?(label)
+                                isPresented = false
+                            }) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: label.iconName)
+                                        .font(.body.weight(.medium))
+                                        .frame(width: 22)
+                                    Text(label.displayName)
+                                        .font(.body.weight(currentLabel?.id == label.id ? .semibold : .regular))
+                                }
+                                .foregroundColor(currentLabel?.id == label.id ? .black : .black.opacity(0.7))
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    currentLabel?.id == label.id
+                                        ? Color(white: 0.92)
+                                        : Color.clear
+                                )
+                                .cornerRadius(8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .foregroundColor(currentLabel?.id == label.id ? .black : .black.opacity(0.7))
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            currentLabel?.id == label.id
-                                ? Color(white: 0.92)
-                                : Color.clear
-                        )
-                        .cornerRadius(8)
+
+                        Rectangle()
+                            .fill(Color(white: 0.92))
+                            .frame(height: 1)
+                            .padding(.top, 4)
                     }
-                    .buttonStyle(.plain)
+
+                    Button(action: { onBugReport?() }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "ladybug")
+                                .font(.body.weight(.semibold))
+                            Text("Report Bug")
+                                .font(.body.weight(.semibold))
+                        }
+                        .foregroundColor(.black.opacity(0.8))
+                    }
+
+                    Button(action: onSignOut) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.body.weight(.semibold))
+                            Text("Sign out")
+                                .font(.body.weight(.semibold))
+                        }
+                        .foregroundColor(.red.opacity(0.9))
+                    }
                 }
-
-                Rectangle()
-                    .fill(Color(white: 0.92))
-                    .frame(height: 1)
-                    .padding(.top, 4)
+                .padding(.top, 18)
             }
-
-            Button(action: { onBugReport?() }) {
-                HStack(spacing: 10) {
-                    Image(systemName: "ladybug")
-                        .font(.body.weight(.semibold))
-                    Text("Report Bug")
-                        .font(.body.weight(.semibold))
-                }
-                .foregroundColor(.black.opacity(0.8))
-            }
-
-            Button(action: onSignOut) {
-                HStack(spacing: 10) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.body.weight(.semibold))
-                    Text("Sign out")
-                        .font(.body.weight(.semibold))
-                }
-                .foregroundColor(.red.opacity(0.9))
-            }
-
-            Spacer()
         }
         .padding(20)
         .frame(maxHeight: .infinity, alignment: .top)
