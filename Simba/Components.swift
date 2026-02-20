@@ -747,6 +747,7 @@ struct BottomNavView: View {
     let onSearchTap: () -> Void
     let onUnreadToggle: () -> Void
     var labelName: String = "Inbox"
+    let onShieldTap: () -> Void
 
     var body: some View {
         HStack {
@@ -769,6 +770,13 @@ struct BottomNavView: View {
                     .frame(width: 44, height: 44)
             }
             Spacer()
+            Button(action: onShieldTap) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.gray.opacity(0.5))
+                    .frame(width: 44, height: 44)
+            }
+            Spacer()
             Button(action: onSearchTap) {
                 Image(systemName: "magnifyingglass")
                     .font(.title3.weight(.semibold))
@@ -776,7 +784,7 @@ struct BottomNavView: View {
                     .frame(width: 44, height: 44)
             }
         }
-        .padding(.horizontal, 36)
+        .padding(.horizontal, 28)
         .padding(.top, 12)
         .padding(.bottom, 34)
         .background(Color.white)
@@ -1637,7 +1645,7 @@ struct GmailConnectCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Connect Gmail")
                 .font(.headline.weight(.bold))
-            Text("Sign in to show your real inbox. Read-only access for Phase 1.")
+            Text("Sign in to show your real inbox.")
                 .font(.subheadline)
                 .foregroundColor(.gray)
             Button(action: onConnect) {

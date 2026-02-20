@@ -25,6 +25,11 @@
 		FE3B938A1F4EEF98A8227060 /* GmailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D43FB614AFB74A8365F363B /* GmailViewModel.swift */; };
 		A1B2C3D4E5F67890ABCDEF12 /* HTMLSnapshotCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FEDCBA0987654321ABCDEF /* HTMLSnapshotCache.swift */; };
 		B2C3D4E5F67890AB1234CDEF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23FEDCBA0987654321ABCDE0 /* SearchView.swift */; };
+		AA10000000000000000001 /* MailFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000001 /* MailFirewallModels.swift */; };
+		AA10000000000000000002 /* MailFirewallService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000002 /* MailFirewallService.swift */; };
+		AA10000000000000000003 /* CloudflareAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* CloudflareAuthView.swift */; };
+		AA10000000000000000004 /* MailFirewallViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000004 /* MailFirewallViewModel.swift */; };
+		AA10000000000000000005 /* MailFirewallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000005 /* MailFirewallView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +52,11 @@
 		ACE13C4E80F45FEC8178FD25 /* GmailThreadLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailThreadLoader.swift; sourceTree = "<group>"; };
 		D0AAE6743DE03B41BC8A6636 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		FA6B465155A78E2562535174 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
+		AA00000000000000000001 /* MailFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallModels.swift; sourceTree = "<group>"; };
+		AA00000000000000000002 /* MailFirewallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallService.swift; sourceTree = "<group>"; };
+		AA00000000000000000003 /* CloudflareAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudflareAuthView.swift; sourceTree = "<group>"; };
+		AA00000000000000000004 /* MailFirewallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallViewModel.swift; sourceTree = "<group>"; };
+		AA00000000000000000005 /* MailFirewallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +77,7 @@
 				9792FDE70A2194B19CAA0BC6 /* AppDelegate.swift */,
 				3C0F634ABB73D2A992C95B4E /* Assets.xcassets */,
 				4DA076C72D8424A1F4837AC3 /* Components.swift */,
+				AA00000000000000000003 /* CloudflareAuthView.swift */,
 				D0AAE6743DE03B41BC8A6636 /* ContentView.swift */,
 				34ABCDEF1234567890ABCDE1 /* EmailDetailView.swift */,
 				AB3F9673E2D92D7EAF315B6F /* EmptyStateView.swift */,
@@ -77,6 +88,10 @@
 				FA6B465155A78E2562535174 /* InboxView.swift */,
 				55C75B7702397726AB890F95 /* Info.plist */,
 				45BCDEF01234567890ABCDE2 /* InteractiveHTMLView.swift */,
+				AA00000000000000000001 /* MailFirewallModels.swift */,
+				AA00000000000000000002 /* MailFirewallService.swift */,
+				AA00000000000000000005 /* MailFirewallView.swift */,
+				AA00000000000000000004 /* MailFirewallViewModel.swift */,
 				23C1D1D4C91EBCF3F9393DFD /* Models.swift */,
 				23FEDCBA0987654321ABCDE0 /* SearchView.swift */,
 				924C8B2557AA6D71D4E78D33 /* SimbaApp.swift */,
@@ -196,6 +211,11 @@
 				A1B2C3D4E5F67890ABCDEF12 /* HTMLSnapshotCache.swift in Sources */,
 				AA566D5DC7A3E5F06EA3F551 /* InboxView.swift in Sources */,
 				D4E5F67890AB12CDEF345678 /* InteractiveHTMLView.swift in Sources */,
+				AA10000000000000000001 /* MailFirewallModels.swift in Sources */,
+				AA10000000000000000002 /* MailFirewallService.swift in Sources */,
+				AA10000000000000000005 /* MailFirewallView.swift in Sources */,
+				AA10000000000000000004 /* MailFirewallViewModel.swift in Sources */,
+				AA10000000000000000003 /* CloudflareAuthView.swift in Sources */,
 				84F7252C4057CD7241A2EFE2 /* Models.swift in Sources */,
 				B2C3D4E5F67890AB1234CDEF /* SearchView.swift in Sources */,
 				FD630585BE1296EDFB2643B0 /* SimbaApp.swift in Sources */,
