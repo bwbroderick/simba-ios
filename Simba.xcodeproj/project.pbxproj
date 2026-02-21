@@ -7,56 +7,83 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		020645A6F83E47DF1FDF73B1 /* MailFirewallService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57EBB835E8934791F2CBCAAA /* MailFirewallService.swift */; };
+		06A1EA0B5044C2333680717C /* CacheSerializationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93C6596CFF32AD1C4C4FDB4 /* CacheSerializationTests.swift */; };
 		0ACA4CEFF156683296CEB05A /* GmailThreadLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE13C4E80F45FEC8178FD25 /* GmailThreadLoader.swift */; };
 		13B40A387D43B8E3F7CA0FCD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3C0F634ABB73D2A992C95B4E /* Assets.xcassets */; };
+		1F2B118D098FB2380BA2A4FB /* TimestampTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F9DB06AB131D6E5CE2D727 /* TimestampTests.swift */; };
 		21561A978A6BBBBF78F35314 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0AAE6743DE03B41BC8A6636 /* ContentView.swift */; };
+		21CBBAD823C93DAF16F3D61F /* GmailViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C75528C062F7C655F3C8238 /* GmailViewModelTests.swift */; };
+		3D2942BCFF0E0ACFF3F42683 /* InteractiveHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B253AD6E6C267A6F08F0A33E /* InteractiveHTMLView.swift */; };
 		3E5F0F9C267DDF496E09E1AE /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5118733413171E4117DBA246 /* ThreadView.swift */; };
-		C3D4E5F67890AB12CDEF3456 /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34ABCDEF1234567890ABCDE1 /* EmailDetailView.swift */; };
-		D4E5F67890AB12CDEF345678 /* InteractiveHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BCDEF01234567890ABCDE2 /* InteractiveHTMLView.swift */; };
+		410B7A35EC2D656A96ADEB4E /* MailFirewallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD27626C4DAA7F17093EFCF /* MailFirewallView.swift */; };
+		45092131B94E6A95965657FD /* MailFirewallViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47AD949DC1ACF5ABC876B62E /* MailFirewallViewModel.swift */; };
 		4E20AA4A3A13A7BD76AC67BC /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4BBE44F0BDAB053AB34558D9 /* Preview Assets.xcassets */; };
+		52302054D775EF70C78FB522 /* RFC2822Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B09131688BE97DF0F796B4 /* RFC2822Tests.swift */; };
+		75CEDD6AC25A9955D289A983 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F695E635B7709A0788783FD5 /* Logger.swift */; };
+		7A87FEF1F2A7B07C8184FEB9 /* CloudflareAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 793B9F99EEB48B06107FAB40 /* CloudflareAuthView.swift */; };
 		7E187CB8FEFF3028FBE5D1CF /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3F9673E2D92D7EAF315B6F /* EmptyStateView.swift */; };
 		84F7252C4057CD7241A2EFE2 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23C1D1D4C91EBCF3F9393DFD /* Models.swift */; };
+		8816205872B7123B9BC0B9D0 /* TextChunkerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1183E50EB3E871A5EC8FF5C1 /* TextChunkerTests.swift */; };
 		A25E19069888AA3EC493E33C /* image.png in Resources */ = {isa = PBXBuildFile; fileRef = 9C2AD6E9C675FCCA6CE9F6EC /* image.png */; };
+		AA047EF7EE5BC419052D8219 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5179C01B1052A974C19FE25A /* SearchView.swift */; };
 		AA566D5DC7A3E5F06EA3F551 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6B465155A78E2562535174 /* InboxView.swift */; };
+		AE47048C618B0DB01230B44F /* MockURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A659D6A636BE61393E4F1A31 /* MockURLProtocol.swift */; };
+		AEB2DB75BF1D5A8DE6C3193C /* MailFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF6528DB343A64E29153671C /* MailFirewallModels.swift */; };
+		B3F5A81A4C4AE837754C506A /* EmailDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1113A382829263CC1625C37F /* EmailDetailView.swift */; };
 		BE1FF50D3C39F1894B188E36 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9792FDE70A2194B19CAA0BC6 /* AppDelegate.swift */; };
 		C49CB3D3D40F24E755670721 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = BB1B12CF0A7A6051130E92A8 /* GoogleSignIn */; };
+		DC3724FB78640F5404C20A8C /* IncrementalSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5E4042044FAA52F84272225 /* IncrementalSyncTests.swift */; };
 		E1270617EAE1B03DEE45AEDB /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA076C72D8424A1F4837AC3 /* Components.swift */; };
+		E1A0CBF47598C5260A69FB41 /* HTMLSnapshotCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B725CAE65DDF837692A0658F /* HTMLSnapshotCache.swift */; };
 		FD630585BE1296EDFB2643B0 /* SimbaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924C8B2557AA6D71D4E78D33 /* SimbaApp.swift */; };
 		FE3B938A1F4EEF98A8227060 /* GmailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D43FB614AFB74A8365F363B /* GmailViewModel.swift */; };
-		A1B2C3D4E5F67890ABCDEF12 /* HTMLSnapshotCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FEDCBA0987654321ABCDEF /* HTMLSnapshotCache.swift */; };
-		B2C3D4E5F67890AB1234CDEF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23FEDCBA0987654321ABCDE0 /* SearchView.swift */; };
-		AA10000000000000000001 /* MailFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000001 /* MailFirewallModels.swift */; };
-		AA10000000000000000002 /* MailFirewallService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000002 /* MailFirewallService.swift */; };
-		AA10000000000000000003 /* CloudflareAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000003 /* CloudflareAuthView.swift */; };
-		AA10000000000000000004 /* MailFirewallViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000004 /* MailFirewallViewModel.swift */; };
-		AA10000000000000000005 /* MailFirewallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000005 /* MailFirewallView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		022ACF8DC921D2FD91A58770 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 56E2FEA2DD195BD6ADCD5DE1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 706CC137ED505CDEAB81DAFC;
+			remoteInfo = Simba;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		04B93F6846AE1A919A03678A /* Simba.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Simba.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		12FEDCBA0987654321ABCDEF /* HTMLSnapshotCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLSnapshotCache.swift; sourceTree = "<group>"; };
+		1113A382829263CC1625C37F /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
+		1183E50EB3E871A5EC8FF5C1 /* TextChunkerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextChunkerTests.swift; sourceTree = "<group>"; };
 		23C1D1D4C91EBCF3F9393DFD /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		34ABCDEF1234567890ABCDE1 /* EmailDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailDetailView.swift; sourceTree = "<group>"; };
-		45BCDEF01234567890ABCDE2 /* InteractiveHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveHTMLView.swift; sourceTree = "<group>"; };
-		23FEDCBA0987654321ABCDE0 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		3C0F634ABB73D2A992C95B4E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3C75528C062F7C655F3C8238 /* GmailViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailViewModelTests.swift; sourceTree = "<group>"; };
+		47AD949DC1ACF5ABC876B62E /* MailFirewallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallViewModel.swift; sourceTree = "<group>"; };
 		4BBE44F0BDAB053AB34558D9 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		4DA076C72D8424A1F4837AC3 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		5118733413171E4117DBA246 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
+		5179C01B1052A974C19FE25A /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		55C75B7702397726AB890F95 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		57EBB835E8934791F2CBCAAA /* MailFirewallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallService.swift; sourceTree = "<group>"; };
+		68F9DB06AB131D6E5CE2D727 /* TimestampTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimestampTests.swift; sourceTree = "<group>"; };
+		793B9F99EEB48B06107FAB40 /* CloudflareAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudflareAuthView.swift; sourceTree = "<group>"; };
 		8D43FB614AFB74A8365F363B /* GmailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailViewModel.swift; sourceTree = "<group>"; };
 		924C8B2557AA6D71D4E78D33 /* SimbaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimbaApp.swift; sourceTree = "<group>"; };
 		9792FDE70A2194B19CAA0BC6 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		9C2AD6E9C675FCCA6CE9F6EC /* image.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = image.png; sourceTree = "<group>"; };
+		A659D6A636BE61393E4F1A31 /* MockURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockURLProtocol.swift; sourceTree = "<group>"; };
+		AA5C82DE53DA461674E3676A /* SimbaTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SimbaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB3F9673E2D92D7EAF315B6F /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		ACE13C4E80F45FEC8178FD25 /* GmailThreadLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GmailThreadLoader.swift; sourceTree = "<group>"; };
+		B253AD6E6C267A6F08F0A33E /* InteractiveHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveHTMLView.swift; sourceTree = "<group>"; };
+		B725CAE65DDF837692A0658F /* HTMLSnapshotCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLSnapshotCache.swift; sourceTree = "<group>"; };
+		BF6528DB343A64E29153671C /* MailFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallModels.swift; sourceTree = "<group>"; };
+		C93C6596CFF32AD1C4C4FDB4 /* CacheSerializationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheSerializationTests.swift; sourceTree = "<group>"; };
 		D0AAE6743DE03B41BC8A6636 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E5E4042044FAA52F84272225 /* IncrementalSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncrementalSyncTests.swift; sourceTree = "<group>"; };
+		EBD27626C4DAA7F17093EFCF /* MailFirewallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallView.swift; sourceTree = "<group>"; };
+		F4B09131688BE97DF0F796B4 /* RFC2822Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFC2822Tests.swift; sourceTree = "<group>"; };
+		F695E635B7709A0788783FD5 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		FA6B465155A78E2562535174 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
-		AA00000000000000000001 /* MailFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallModels.swift; sourceTree = "<group>"; };
-		AA00000000000000000002 /* MailFirewallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallService.swift; sourceTree = "<group>"; };
-		AA00000000000000000003 /* CloudflareAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudflareAuthView.swift; sourceTree = "<group>"; };
-		AA00000000000000000004 /* MailFirewallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallViewModel.swift; sourceTree = "<group>"; };
-		AA00000000000000000005 /* MailFirewallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailFirewallView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,24 +103,25 @@
 			children = (
 				9792FDE70A2194B19CAA0BC6 /* AppDelegate.swift */,
 				3C0F634ABB73D2A992C95B4E /* Assets.xcassets */,
+				793B9F99EEB48B06107FAB40 /* CloudflareAuthView.swift */,
 				4DA076C72D8424A1F4837AC3 /* Components.swift */,
-				AA00000000000000000003 /* CloudflareAuthView.swift */,
 				D0AAE6743DE03B41BC8A6636 /* ContentView.swift */,
-				34ABCDEF1234567890ABCDE1 /* EmailDetailView.swift */,
+				1113A382829263CC1625C37F /* EmailDetailView.swift */,
 				AB3F9673E2D92D7EAF315B6F /* EmptyStateView.swift */,
 				ACE13C4E80F45FEC8178FD25 /* GmailThreadLoader.swift */,
 				8D43FB614AFB74A8365F363B /* GmailViewModel.swift */,
-				12FEDCBA0987654321ABCDEF /* HTMLSnapshotCache.swift */,
+				B725CAE65DDF837692A0658F /* HTMLSnapshotCache.swift */,
 				9C2AD6E9C675FCCA6CE9F6EC /* image.png */,
 				FA6B465155A78E2562535174 /* InboxView.swift */,
 				55C75B7702397726AB890F95 /* Info.plist */,
-				45BCDEF01234567890ABCDE2 /* InteractiveHTMLView.swift */,
-				AA00000000000000000001 /* MailFirewallModels.swift */,
-				AA00000000000000000002 /* MailFirewallService.swift */,
-				AA00000000000000000005 /* MailFirewallView.swift */,
-				AA00000000000000000004 /* MailFirewallViewModel.swift */,
+				B253AD6E6C267A6F08F0A33E /* InteractiveHTMLView.swift */,
+				F695E635B7709A0788783FD5 /* Logger.swift */,
+				BF6528DB343A64E29153671C /* MailFirewallModels.swift */,
+				57EBB835E8934791F2CBCAAA /* MailFirewallService.swift */,
+				EBD27626C4DAA7F17093EFCF /* MailFirewallView.swift */,
+				47AD949DC1ACF5ABC876B62E /* MailFirewallViewModel.swift */,
 				23C1D1D4C91EBCF3F9393DFD /* Models.swift */,
-				23FEDCBA0987654321ABCDE0 /* SearchView.swift */,
+				5179C01B1052A974C19FE25A /* SearchView.swift */,
 				924C8B2557AA6D71D4E78D33 /* SimbaApp.swift */,
 				5118733413171E4117DBA246 /* ThreadView.swift */,
 				3E9510309784FABFCD495167 /* Preview Content */,
@@ -105,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				04B93F6846AE1A919A03678A /* Simba.app */,
+				AA5C82DE53DA461674E3676A /* SimbaTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,10 +146,25 @@
 			path = "Preview Content";
 			sourceTree = "<group>";
 		};
+		A1FFC2A1CD3D0AB5479E78FF /* SimbaTests */ = {
+			isa = PBXGroup;
+			children = (
+				C93C6596CFF32AD1C4C4FDB4 /* CacheSerializationTests.swift */,
+				3C75528C062F7C655F3C8238 /* GmailViewModelTests.swift */,
+				E5E4042044FAA52F84272225 /* IncrementalSyncTests.swift */,
+				A659D6A636BE61393E4F1A31 /* MockURLProtocol.swift */,
+				F4B09131688BE97DF0F796B4 /* RFC2822Tests.swift */,
+				1183E50EB3E871A5EC8FF5C1 /* TextChunkerTests.swift */,
+				68F9DB06AB131D6E5CE2D727 /* TimestampTests.swift */,
+			);
+			path = SimbaTests;
+			sourceTree = "<group>";
+		};
 		B56B6717ED0AF076BE5FEB2B = {
 			isa = PBXGroup;
 			children = (
 				1F417455D0A6DA9F58C2EC4C /* Simba */,
+				A1FFC2A1CD3D0AB5479E78FF /* SimbaTests */,
 				29ACD8A6BA311FB9F31E947F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -128,6 +172,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		3F04E0D0045FEA4F0232AABA /* SimbaTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2698C0AF2D5BC350AC826F08 /* Build configuration list for PBXNativeTarget "SimbaTests" */;
+			buildPhases = (
+				C7B91797C988E8DC91BBEE2B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A806B7E5A0414B68AC67DB01 /* PBXTargetDependency */,
+			);
+			name = SimbaTests;
+			packageProductDependencies = (
+			);
+			productName = SimbaTests;
+			productReference = AA5C82DE53DA461674E3676A /* SimbaTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		706CC137ED505CDEAB81DAFC /* Simba */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D36BDDFA308CF3ABF62C05FB /* Build configuration list for PBXNativeTarget "Simba" */;
@@ -157,6 +219,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
+					3F04E0D0045FEA4F0232AABA = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					706CC137ED505CDEAB81DAFC = {
 						ProvisioningStyle = Automatic;
 					};
@@ -179,6 +245,7 @@
 			projectRoot = "";
 			targets = (
 				706CC137ED505CDEAB81DAFC /* Simba */,
+				3F04E0D0045FEA4F0232AABA /* SimbaTests */,
 			);
 		};
 /* End PBXProject section */
@@ -202,30 +269,71 @@
 			buildActionMask = 2147483647;
 			files = (
 				BE1FF50D3C39F1894B188E36 /* AppDelegate.swift in Sources */,
+				7A87FEF1F2A7B07C8184FEB9 /* CloudflareAuthView.swift in Sources */,
 				E1270617EAE1B03DEE45AEDB /* Components.swift in Sources */,
 				21561A978A6BBBBF78F35314 /* ContentView.swift in Sources */,
-				C3D4E5F67890AB12CDEF3456 /* EmailDetailView.swift in Sources */,
+				B3F5A81A4C4AE837754C506A /* EmailDetailView.swift in Sources */,
 				7E187CB8FEFF3028FBE5D1CF /* EmptyStateView.swift in Sources */,
 				0ACA4CEFF156683296CEB05A /* GmailThreadLoader.swift in Sources */,
 				FE3B938A1F4EEF98A8227060 /* GmailViewModel.swift in Sources */,
-				A1B2C3D4E5F67890ABCDEF12 /* HTMLSnapshotCache.swift in Sources */,
+				E1A0CBF47598C5260A69FB41 /* HTMLSnapshotCache.swift in Sources */,
 				AA566D5DC7A3E5F06EA3F551 /* InboxView.swift in Sources */,
-				D4E5F67890AB12CDEF345678 /* InteractiveHTMLView.swift in Sources */,
-				AA10000000000000000001 /* MailFirewallModels.swift in Sources */,
-				AA10000000000000000002 /* MailFirewallService.swift in Sources */,
-				AA10000000000000000005 /* MailFirewallView.swift in Sources */,
-				AA10000000000000000004 /* MailFirewallViewModel.swift in Sources */,
-				AA10000000000000000003 /* CloudflareAuthView.swift in Sources */,
+				3D2942BCFF0E0ACFF3F42683 /* InteractiveHTMLView.swift in Sources */,
+				75CEDD6AC25A9955D289A983 /* Logger.swift in Sources */,
+				AEB2DB75BF1D5A8DE6C3193C /* MailFirewallModels.swift in Sources */,
+				020645A6F83E47DF1FDF73B1 /* MailFirewallService.swift in Sources */,
+				410B7A35EC2D656A96ADEB4E /* MailFirewallView.swift in Sources */,
+				45092131B94E6A95965657FD /* MailFirewallViewModel.swift in Sources */,
 				84F7252C4057CD7241A2EFE2 /* Models.swift in Sources */,
-				B2C3D4E5F67890AB1234CDEF /* SearchView.swift in Sources */,
+				AA047EF7EE5BC419052D8219 /* SearchView.swift in Sources */,
 				FD630585BE1296EDFB2643B0 /* SimbaApp.swift in Sources */,
 				3E5F0F9C267DDF496E09E1AE /* ThreadView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C7B91797C988E8DC91BBEE2B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				06A1EA0B5044C2333680717C /* CacheSerializationTests.swift in Sources */,
+				21CBBAD823C93DAF16F3D61F /* GmailViewModelTests.swift in Sources */,
+				DC3724FB78640F5404C20A8C /* IncrementalSyncTests.swift in Sources */,
+				AE47048C618B0DB01230B44F /* MockURLProtocol.swift in Sources */,
+				52302054D775EF70C78FB522 /* RFC2822Tests.swift in Sources */,
+				8816205872B7123B9BC0B9D0 /* TextChunkerTests.swift in Sources */,
+				1F2B118D098FB2380BA2A4FB /* TimestampTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A806B7E5A0414B68AC67DB01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 706CC137ED505CDEAB81DAFC /* Simba */;
+			targetProxy = 022ACF8DC921D2FD91A58770 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0610413FDAD0ACD2295B17F5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bb.simba.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Simba.app/Simba";
+			};
+			name = Debug;
+		};
 		274FC0CF30561307AFA86431 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -339,6 +447,24 @@
 			};
 			name = Debug;
 		};
+		D25098773118B17AC0407128 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bb.simba.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Simba.app/Simba";
+			};
+			name = Release;
+		};
 		E83CFD36FA23EEC6EEFA9142 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -404,6 +530,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2698C0AF2D5BC350AC826F08 /* Build configuration list for PBXNativeTarget "SimbaTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0610413FDAD0ACD2295B17F5 /* Debug */,
+				D25098773118B17AC0407128 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		5B50EC69B3305DE133CB91B0 /* Build configuration list for PBXProject "Simba" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

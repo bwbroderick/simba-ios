@@ -41,6 +41,22 @@ targets:
               - com.googleusercontent.apps.350262483118-bcrf17c6jrkfrum041she8njri3ju6m1
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.bb.simba.app.refresh
+        UIBackgroundModes:
+          - fetch
+  SimbaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SimbaTests
+    dependencies:
+      - target: Simba
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bb.simba.tests
+        SWIFT_VERSION: 5.9
+        IPHONEOS_DEPLOYMENT_TARGET: 17.0
 packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS

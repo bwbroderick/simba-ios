@@ -1,0 +1,26 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Run tests"
+  lane :test do
+    run_tests(
+      scheme: "Simba",
+      device: "iPhone 17"
+    )
+  end
+
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    increment_build_number
+    build_app(
+      scheme: "Simba",
+      export_method: "app-store"
+    )
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      team_id: ENV["TEAM_ID"],
+      username: ENV["APPLE_ID"],
+      app_specific_password: ENV["APP_SPECIFIC_PASSWORD"]
+    )
+  end
+end

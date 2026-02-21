@@ -1,5 +1,6 @@
 import Foundation
 import GoogleSignIn
+import OSLog
 
 @MainActor
 final class GmailThreadLoader: ObservableObject {
@@ -13,6 +14,7 @@ final class GmailThreadLoader: ObservableObject {
             return
         }
 
+        Logger.network.info("Loading thread \(threadID, privacy: .private)")
         isLoading = true
         errorMessage = nil
 
@@ -30,6 +32,7 @@ final class GmailThreadLoader: ObservableObject {
 
             messages = parsed
         } catch {
+            Logger.network.error("Thread load error: \(error.localizedDescription, privacy: .public)")
             errorMessage = error.localizedDescription
         }
 

@@ -1,5 +1,6 @@
 import Foundation
 import GoogleSignIn
+import OSLog
 import UIKit
 
 struct GmailLabel: Identifiable {
@@ -91,12 +92,14 @@ final class GmailViewModel: ObservableObject {
         GIDSignIn.sharedInstance.restorePreviousSignIn { [weak self] user, error in
             guard let self else { return }
             if let error {
+                Logger.auth.error("Restore session failed: \(error.localizedDescription, privacy: .public)")
                 self.errorMessage = error.localizedDescription
                 self.isSignedIn = false
                 return
             }
 
             self.isSignedIn = (user != nil)
+            Logger.auth.info("Session restored: isSignedIn=\(self.isSignedIn, privacy: .public)")
             if self.isSignedIn {
                 Task {
                     await self.fetchLabels()
@@ -122,12 +125,14 @@ final class GmailViewModel: ObservableObject {
         ) { [weak self] result, error in
             guard let self else { return }
             if let error {
+                Logger.auth.error("Sign-in failed: \(error.localizedDescription, privacy: .public)")
                 self.errorMessage = error.localizedDescription
                 self.isSignedIn = false
                 return
             }
 
             self.isSignedIn = (result?.user != nil)
+            Logger.auth.info("Sign-in result: isSignedIn=\(self.isSignedIn, privacy: .public)")
             Task {
                 await self.fetchLabels()
                 await self.fetchInbox()
@@ -141,6 +146,7 @@ final class GmailViewModel: ObservableObject {
         threads = []
         drafts = []
         currentLabel = GmailLabel.defaultLabels[0]
+        Logger.auth.info("User signed out")
     }
 
     // MARK: - Labels
@@ -172,12 +178,104 @@ final class GmailViewModel: ObservableObject {
         }
     }
 
+    func fetchInboxUnreadCount() async -> Int? {
+        guard let token = await refreshedAccessToken() else { return nil }
+        let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX")!
+        var req = URLRequest(url: url)
+        req.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) == true
+        else { return nil }
+        return (try? JSONDecoder().decode(GmailInboxLabelDetail.self, from: data))?.threadsUnread
+    }
+
     func switchLabel(_ label: GmailLabel) async {
         currentLabel = label
         threads = []
         nextPageToken = nil
         hasMorePages = false
         await fetchInbox()
+    }
+
+    // MARK: - Incremental Sync
+
+    func performDeltaSync(token: String) async -> Bool {
+        guard let historyId = lastHistoryId else {
+            Logger.sync.info("Delta sync skipped: no lastHistoryId")
+            return false
+        }
+
+        Logger.sync.info("Delta sync starting with historyId \(historyId, privacy: .public)")
+
+        var components = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/history")!
+        components.queryItems = [
+            URLQueryItem(name: "startHistoryId", value: historyId),
+            URLQueryItem(name: "labelId", value: "INBOX"),
+            URLQueryItem(name: "historyTypes", value: "messageAdded"),
+            URLQueryItem(name: "historyTypes", value: "messageDeleted"),
+            URLQueryItem(name: "historyTypes", value: "labelAdded"),
+            URLQueryItem(name: "historyTypes", value: "labelRemoved"),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+            return false
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 404 {
+            Logger.sync.warning("Delta sync 404: clearing lastHistoryId")
+            lastHistoryId = nil
+            return false
+        }
+
+        guard let historyResponse = try? JSONDecoder().decode(GmailHistoryResponse.self, from: data) else {
+            return false
+        }
+
+        if let newHistoryId = historyResponse.historyId {
+            lastHistoryId = newHistoryId
+        }
+
+        let records = historyResponse.history ?? []
+        if records.isEmpty {
+            Logger.sync.info("Delta sync: no changes")
+            return true
+        }
+
+        var affectedThreadIds: Set<String> = []
+        for record in records {
+            for item in record.messagesAdded ?? [] {
+                if let tid = item.message.threadId { affectedThreadIds.insert(tid) }
+            }
+            for item in record.messagesDeleted ?? [] {
+                if let tid = item.message.threadId { affectedThreadIds.insert(tid) }
+            }
+            for item in record.labelsAdded ?? [] {
+                if let tid = item.message.threadId { affectedThreadIds.insert(tid) }
+            }
+            for item in record.labelsRemoved ?? [] {
+                if let tid = item.message.threadId { affectedThreadIds.insert(tid) }
+            }
+        }
+
+        Logger.sync.info("Delta sync: \(affectedThreadIds.count, privacy: .public) affected threads")
+
+        let refreshed = await loadThreadDetails(threadIDs: Array(affectedThreadIds), token: token)
+        let refreshedIDs = Set(refreshed.compactMap { $0.threadID })
+        let removedIDs = affectedThreadIds.subtracting(refreshedIDs)
+
+        var updated = threads.filter { thread in
+            guard let tid = thread.threadID else { return true }
+            return !removedIDs.contains(tid) && !refreshedIDs.contains(tid)
+        }
+        updated = refreshed + updated
+        threads = updated
+
+        saveCachedThreads(threads)
+
+        Logger.sync.info("Delta sync applied: \(refreshed.count, privacy: .public) updated, \(removedIDs.count, privacy: .public) removed")
+        return true
     }
 
     // MARK: - Fetch Inbox
@@ -192,6 +290,20 @@ final class GmailViewModel: ObservableObject {
             return
         }
 
+        // Attempt delta sync for INBOX pull-to-refresh before doing a full fetch
+        if isRefresh && currentLabel.id == "INBOX" {
+            Logger.network.info("fetchInbox: attempting delta sync")
+            let didSync = await performDeltaSync(token: token)
+            if didSync {
+                Logger.network.info("fetchInbox: delta sync succeeded, skipping full fetch")
+                isLoading = false
+                return
+            }
+        }
+
+        let labelIdForLog = currentLabel.id
+        Logger.network.info("fetchInbox: full fetch for label \(labelIdForLog, privacy: .public)")
+
         // Only show loading indicator for initial loads, not pull-to-refresh
         // (pull-to-refresh has its own spinner; showing ProgressView changes
         // ScrollView content which causes SwiftUI to cancel the refresh task)
@@ -203,7 +315,7 @@ final class GmailViewModel: ObservableObject {
         nextPageToken = nil
 
         do {
-            let (threadIDs, pageToken) = try await fetchThreadIDs(
+            let (threadIDs, pageToken, historyId) = try await fetchThreadIDs(
                 token: token,
                 labelId: currentLabel.id,
                 unreadOnly: unreadOnly,
@@ -219,9 +331,13 @@ final class GmailViewModel: ObservableObject {
 
             threads = loadedThreads
             if !unreadOnly && currentLabel.id == "INBOX" {
+                if let historyId {
+                    lastHistoryId = historyId
+                }
                 saveCachedThreads(loadedThreads)
             }
 
+            Logger.network.info("fetchInbox: loaded \(loadedThreads.count, privacy: .public) threads")
             ContactStore.shared.extract(from: loadedThreads)
             HTMLSnapshotCache.shared.preRenderInBackground(threads: loadedThreads)
         } catch is CancellationError {
@@ -249,7 +365,7 @@ final class GmailViewModel: ObservableObject {
         isLoadingMore = true
 
         do {
-            let (threadIDs, newPageToken) = try await fetchThreadIDs(
+            let (threadIDs, newPageToken, _) = try await fetchThreadIDs(
                 token: token,
                 labelId: currentLabel.id,
                 unreadOnly: unreadOnlyActive,
@@ -281,7 +397,7 @@ final class GmailViewModel: ObservableObject {
         labelId: String,
         unreadOnly: Bool,
         pageToken: String?
-    ) async throws -> ([String], String?) {
+    ) async throws -> ([String], String?, String?) {
         var listComponents = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads")!
         var queryItems = [
             URLQueryItem(name: "maxResults", value: "20"),
@@ -315,7 +431,7 @@ final class GmailViewModel: ObservableObject {
         let listResponse = try JSONDecoder().decode(GmailThreadListResponse.self, from: listData)
 
         let threadIDs = (listResponse.threads ?? []).map { $0.id }
-        return (threadIDs, listResponse.nextPageToken)
+        return (threadIDs, listResponse.nextPageToken, listResponse.historyId)
     }
 
     private func loadThreadDetails(threadIDs: [String], token: String) async -> [EmailThread] {
@@ -438,6 +554,7 @@ final class GmailViewModel: ObservableObject {
             return
         }
 
+        Logger.network.info("Trashing thread \(threadID, privacy: .private)")
         do {
             let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)/trash")!
             var request = URLRequest(url: url)
@@ -463,6 +580,7 @@ final class GmailViewModel: ObservableObject {
             return
         }
 
+        Logger.network.info("Archiving thread \(threadID, privacy: .private)")
         do {
             let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/threads/\(threadID)/modify")!
             var request = URLRequest(url: url)
@@ -493,6 +611,7 @@ final class GmailViewModel: ObservableObject {
             return
         }
 
+        Logger.network.info("Toggling star for thread \(threadID, privacy: .private), currently starred: \(isCurrentlyStarred, privacy: .public)")
         let body: [String: [String]] = isCurrentlyStarred
             ? ["removeLabelIds": ["STARRED"]]
             : ["addLabelIds": ["STARRED"]]
@@ -546,19 +665,7 @@ final class GmailViewModel: ObservableObject {
         isSending = true
         errorMessage = nil
 
-        var headers = [
-            "To: \(to)",
-            "Subject: \(subject)",
-            "Content-Type: text/plain; charset=\"UTF-8\""
-        ]
-        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Cc: \(cc)", at: 1)
-        }
-        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
-        }
-
-        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
+        let rawMessage = Self.buildRawMessage(to: to, subject: subject, body: body, cc: cc, bcc: bcc)
 
         guard let data = rawMessage.data(using: .utf8) else {
             errorMessage = "Failed to encode message."
@@ -683,19 +790,7 @@ final class GmailViewModel: ObservableObject {
     func createDraft(to: String, subject: String, body: String, cc: String = "", bcc: String = "") async -> String? {
         guard let token = await refreshedAccessToken() else { return nil }
 
-        var headers = [
-            "To: \(to)",
-            "Subject: \(subject)",
-            "Content-Type: text/plain; charset=\"UTF-8\""
-        ]
-        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Cc: \(cc)", at: 1)
-        }
-        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
-        }
-
-        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
+        let rawMessage = Self.buildRawMessage(to: to, subject: subject, body: body, cc: cc, bcc: bcc)
         guard let data = rawMessage.data(using: .utf8) else { return nil }
 
         var encoded = data.base64EncodedString()
@@ -724,19 +819,7 @@ final class GmailViewModel: ObservableObject {
     func updateDraft(draftId: String, to: String, subject: String, body: String, cc: String = "", bcc: String = "") async {
         guard let token = await refreshedAccessToken() else { return }
 
-        var headers = [
-            "To: \(to)",
-            "Subject: \(subject)",
-            "Content-Type: text/plain; charset=\"UTF-8\""
-        ]
-        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Cc: \(cc)", at: 1)
-        }
-        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
-        }
-
-        let rawMessage = (headers + ["", body]).joined(separator: "\r\n")
+        let rawMessage = Self.buildRawMessage(to: to, subject: subject, body: body, cc: cc, bcc: bcc)
         guard let data = rawMessage.data(using: .utf8) else { return }
 
         var encoded = data.base64EncodedString()
@@ -932,7 +1015,7 @@ final class GmailViewModel: ObservableObject {
         return (first + second).uppercased()
     }
 
-    static func relativeTimestamp(from headerValue: String) -> String {
+    nonisolated static func relativeTimestamp(from headerValue: String) -> String {
         guard let date = parseDate(from: headerValue) else { return "" }
         let interval = Date().timeIntervalSince(date)
         if interval < 60 { return "Now" }
@@ -944,7 +1027,7 @@ final class GmailViewModel: ObservableObject {
         return "\(days)d"
     }
 
-    private static func parseDate(from headerValue: String) -> Date? {
+    nonisolated static func parseDate(from headerValue: String) -> Date? {
         let cleaned = headerValue.components(separatedBy: " (").first ?? headerValue
         let formats = [
             "EEE, dd MMM yyyy HH:mm:ss Z",
@@ -1011,6 +1094,21 @@ final class GmailViewModel: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
 
+    nonisolated static func buildRawMessage(to: String, subject: String, body: String, cc: String = "", bcc: String = "") -> String {
+        var headers = [
+            "To: \(to)",
+            "Subject: \(subject)",
+            "Content-Type: text/plain; charset=\"UTF-8\""
+        ]
+        if !cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Cc: \(cc)", at: 1)
+        }
+        if !bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            headers.insert("Bcc: \(bcc)", at: cc.isEmpty ? 1 : 2)
+        }
+        return (headers + ["", body]).joined(separator: "\r\n")
+    }
+
     static func decodeBase64URLData(_ value: String) -> Data? {
         var v = value.replacingOccurrences(of: "-", with: "+")
         v = v.replacingOccurrences(of: "_", with: "/")
@@ -1022,12 +1120,15 @@ final class GmailViewModel: ObservableObject {
     // MARK: - Cache
 
     private func loadCachedThreads() {
+        Logger.cache.info("Loading cached threads")
         guard let data = try? Data(contentsOf: cacheURL) else { return }
         guard let cached = try? JSONDecoder().decode([CachedThread].self, from: data) else { return }
         threads = cached.map { $0.toModel() }
+        Logger.cache.debug("Loaded \(cached.count, privacy: .public) threads from cache")
     }
 
     private func saveCachedThreads(_ threads: [EmailThread]) {
+        Logger.cache.debug("Saving \(threads.count, privacy: .public) threads to cache")
         let cached = threads.map { CachedThread(from: $0) }
         guard let data = try? JSONEncoder().encode(cached) else { return }
         try? data.write(to: cacheURL, options: [.atomic])
@@ -1038,7 +1139,7 @@ final class GmailViewModel: ObservableObject {
         return await withCheckedContinuation { continuation in
             user.refreshTokensIfNeeded { user, error in
                 if let error {
-                    print("Token refresh failed: \(error.localizedDescription)")
+                    Logger.auth.error("Token refresh failed: \(error.localizedDescription, privacy: .public)")
                     continuation.resume(returning: nil)
                     return
                 }
@@ -1051,6 +1152,11 @@ final class GmailViewModel: ObservableObject {
     private var readTask: Task<Void, Never>?
     private var unreadOnlyActive = false
     private var currentFetchID: UUID?
+
+    private var lastHistoryId: String? {
+        get { UserDefaults.standard.string(forKey: "simba.lastHistoryId") }
+        set { UserDefaults.standard.set(newValue, forKey: "simba.lastHistoryId") }
+    }
 }
 
 // MARK: - API Response Models
@@ -1066,6 +1172,7 @@ struct GmailMessageRef: Decodable {
 struct GmailThreadListResponse: Decodable {
     let threads: [GmailThreadRef]?
     let nextPageToken: String?
+    let historyId: String?
 }
 
 struct GmailThreadRef: Decodable {
@@ -1138,6 +1245,42 @@ struct GmailDraftDetail: Decodable {
 
 struct GmailDraftCreateResponse: Decodable {
     let id: String
+}
+
+// MARK: - History API Models
+
+struct GmailHistoryResponse: Decodable {
+    let history: [GmailHistoryRecord]?
+    let historyId: String?
+    let nextPageToken: String?
+}
+
+struct GmailHistoryRecord: Decodable {
+    let id: String
+    let messagesAdded: [GmailHistoryMessage]?
+    let messagesDeleted: [GmailHistoryMessage]?
+    let labelsAdded: [GmailHistoryLabelChange]?
+    let labelsRemoved: [GmailHistoryLabelChange]?
+}
+
+struct GmailHistoryMessage: Decodable {
+    let message: GmailHistoryMessageRef
+}
+
+struct GmailHistoryMessageRef: Decodable {
+    let id: String
+    let threadId: String?
+    let labelIds: [String]?
+}
+
+struct GmailHistoryLabelChange: Decodable {
+    let message: GmailHistoryMessageRef
+    let labelIds: [String]?
+}
+
+struct GmailInboxLabelDetail: Decodable {
+    let threadsUnread: Int?
+    let messagesUnread: Int?
 }
 
 // MARK: - Cache Model
